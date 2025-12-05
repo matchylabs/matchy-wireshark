@@ -131,6 +131,11 @@ install_for() {
     
     cp "$plugin_src" "$plugin_dir/$plugin_name"
     
+    # macOS: Remove quarantine attribute (for downloaded binaries)
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        xattr -d com.apple.quarantine "$plugin_dir/$plugin_name" 2>/dev/null || true
+    fi
+    
     # macOS: Fix library paths
     if [[ "$OSTYPE" == "darwin"* ]]; then
         install_name_tool -id "$plugin_name" "$plugin_dir/$plugin_name" 2>/dev/null || true

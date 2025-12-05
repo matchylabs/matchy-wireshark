@@ -3,7 +3,7 @@ name = "matchy-wireshark"
 version = "0.2.0"
 edition = "2021"
 authors = ["MatchyLabs Contributors"]
-license = "Apache-2.0"
+license = "GPL-2.0-or-later"
 description = "Wireshark plugin for real-time threat intelligence matching"
 repository = "https://github.com/matchylabs/matchy-wireshark"
 # Version of Wireshark this plugin was built against

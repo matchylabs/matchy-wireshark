@@ -181,35 +181,31 @@ jobs:
         if: matrix.platform != 'windows'
         id: package-unix
         run: |
-          mkdir -p dist
-          cp "target/${{ matrix.target }}/release/libmatchy_wireshark.${{ matrix.lib_ext }}" dist/matchy.so
-          cp README.md dist/
-          cp install.sh dist/
-          
           # Get plugin version from Cargo.toml
           PLUGIN_VERSION=$(grep '^version' Cargo.toml | head -1 | sed -E 's/version = "([^"]+)"/\1/')
           
           # Record minimum Wireshark version (what we built against)
           WS_VERSION=$(tshark --version | head -1 | sed -E 's/.*([0-9]+\.[0-9]+)\..*/\1/')
-          echo "${WS_VERSION}" > dist/MIN_WIRESHARK_VERSION
+          
+          # Create directory structure with root folder
+          PKG_NAME="matchy-wireshark-plugin-${PLUGIN_VERSION}-wireshark-${WS_VERSION}-${{ matrix.platform }}-${{ matrix.arch }}"
+          mkdir -p "dist/${PKG_NAME}"
+          cp "target/${{ matrix.target }}/release/libmatchy_wireshark.${{ matrix.lib_ext }}" "dist/${PKG_NAME}/matchy.so"
+          cp README.md "dist/${PKG_NAME}/"
+          cp install.sh "dist/${PKG_NAME}/"
+          echo "${WS_VERSION}" > "dist/${PKG_NAME}/MIN_WIRESHARK_VERSION"
+          
           echo "wireshark_version=${WS_VERSION}" >> "${GITHUB_OUTPUT}"
           echo "plugin_version=${PLUGIN_VERSION}" >> "${GITHUB_OUTPUT}"
           
           cd dist
-          tar -czvf "../matchy-wireshark-plugin-${PLUGIN_VERSION}-wireshark-${WS_VERSION}-${{ matrix.platform }}-${{ matrix.arch }}.tar.gz" ./*
+          tar -czvf "../${PKG_NAME}.tar.gz" "${PKG_NAME}"
 
       - name: Package (Windows)
         if: matrix.platform == 'windows'
         id: package-windows
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path dist | Out-Null
-          
-          # Copy the built DLL
-          Copy-Item "target/${{ matrix.target }}/release/matchy_wireshark.dll" -Destination "dist/matchy.dll"
-          Copy-Item "README.md" -Destination "dist/"
-          Copy-Item "install.ps1" -Destination "dist/"
-          
           # Get plugin version from Cargo.toml
           $PLUGIN_VERSION = (Select-String -Path "Cargo.toml" -Pattern '^version = "([^"]+)"' | Select-Object -First 1).Matches.Groups[1].Value
           
@@ -221,13 +217,22 @@ jobs:
             $WS_VERSION = "4.6"
           }
           
+          # Create directory structure with root folder
+          $PKG_NAME = "matchy-wireshark-plugin-$PLUGIN_VERSION-wireshark-$WS_VERSION-${{ matrix.platform }}-${{ matrix.arch }}"
+          New-Item -ItemType Directory -Force -Path "dist/$PKG_NAME" | Out-Null
+          
+          # Copy the built DLL
+          Copy-Item "target/${{ matrix.target }}/release/matchy_wireshark.dll" -Destination "dist/$PKG_NAME/matchy.dll"
+          Copy-Item "README.md" -Destination "dist/$PKG_NAME/"
+          Copy-Item "install.ps1" -Destination "dist/$PKG_NAME/"
+          
           # Record minimum version
-          $WS_VERSION | Out-File -FilePath "dist/MIN_WIRESHARK_VERSION" -Encoding ASCII -NoNewline
+          $WS_VERSION | Out-File -FilePath "dist/$PKG_NAME/MIN_WIRESHARK_VERSION" -Encoding ASCII -NoNewline
           echo "wireshark_version=$WS_VERSION" >> $env:GITHUB_OUTPUT
           echo "plugin_version=$PLUGIN_VERSION" >> $env:GITHUB_OUTPUT
           
-          # Create zip archive
-          Compress-Archive -Path "dist/*" -DestinationPath "matchy-wireshark-plugin-$PLUGIN_VERSION-wireshark-$WS_VERSION-${{ matrix.platform }}-${{ matrix.arch }}.zip"
+          # Create zip archive with root directory
+          Compress-Archive -Path "dist/$PKG_NAME" -DestinationPath "$PKG_NAME.zip"
           
       - name: Upload artifact (Unix)
         if: matrix.platform != 'windows'

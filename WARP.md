@@ -18,8 +18,9 @@ cargo build --release
 ```
 
 The compiled plugin will be located at:
-- **macOS**: `target/release/libmatchy_wireshark.dylib`
-- **Linux**: `target/release/libmatchy_wireshark.so`
+- **macOS**: `target/release/libmatchy_wireshark_plugin.dylib`
+- **Linux**: `target/release/libmatchy_wireshark_plugin.so`
+- **Windows**: `target/release/matchy_wireshark_plugin.dll`
 
 ### Testing
 ```bash
@@ -46,17 +47,19 @@ cargo fmt -- --check
 ```
 
 ### Installation
-After building, copy the plugin to your Wireshark plugins directory:
+Use the provided installer scripts which handle version detection and path setup:
 
-**macOS:**
+**macOS/Linux:**
 ```bash
-cp target/release/libmatchy_wireshark.dylib ~/.local/lib/wireshark/plugins/
+./install.sh
 ```
 
-**Linux:**
-```bash
-cp target/release/libmatchy_wireshark.so ~/.local/lib/wireshark/plugins/
+**Windows (PowerShell):**
+```powershell
+.\install.ps1
 ```
+
+The installers automatically detect your Wireshark version and install to the correct plugin directory.
 
 ## Architecture
 
@@ -76,21 +79,23 @@ cp target/release/libmatchy_wireshark.so ~/.local/lib/wireshark/plugins/
   - FFI functions exported for Wireshark C API
   - Global `THREAT_DB` mutex holding the loaded threat database
   - Version and plugin metadata constants
+  - Protocol and field registration with Wireshark
+  - Preferences registration (database path setting)
 
 - **`postdissector.rs`**: Wireshark postdissector implementation
   - Registers the postdissector with Wireshark
-  - Main packet processing logic (currently skeleton)
-  - Extracts IPs/domains and queries the database
+  - Main packet processing logic - extracts IPs and queries database
+  - Adds threat info to Wireshark's protocol tree
 
-- **`threats.rs`**: Threat matching and packet colorization
+- **`threats.rs`**: Threat data structures
   - `ThreatLevel` enum: Critical, High, Medium, Low, Unknown
   - `ThreatData` struct: Parsed threat intelligence data
-  - Wireshark color mappings for threat levels
   - JSON parsing from matchy database results
 
-- **`display_filter.rs`**: Custom display filter expressions
-  - Registers custom Wireshark filter fields (e.g., `matchy.threat_detected`)
-  - Filter expression evaluation (currently skeleton)
+- **`wireshark_ffi.rs`**: Wireshark C API bindings
+  - Hand-written minimal FFI bindings for Wireshark functions
+  - Type definitions matching Wireshark's C structures
+  - Address extraction helpers for IPv4/IPv6
 
 ### FFI Layer
 
@@ -126,22 +131,22 @@ The threat database is stored in a `static Mutex<Option<Arc<matchy::Database>>>`
 
 ## Development Status
 
-**Current State**: Early skeleton implementation
+**Current State**: Functional plugin with cross-platform support
 
 **Implemented**:
-- Basic plugin structure and FFI exports
-- ThreatLevel enum with Wireshark color mappings
-- ThreatData JSON parsing
-- Database loading infrastructure
-- Module organization
+- Full Wireshark plugin structure with FFI bindings
+- Protocol and field registration (matchy.threat_detected, matchy.level, etc.)
+- Database loading via preferences or environment variable
+- IP extraction from packets (IPv4 and IPv6)
+- Threat lookups using matchy database
+- Protocol tree display of threat information
+- Cross-platform builds (macOS, Linux, Windows)
+- Installer scripts for all platforms
 
-**TODO (marked in code)**:
-- Wireshark C API bindings (calling into Wireshark functions)
-- Packet processing logic (IP/domain extraction)
-- Display filter registration and evaluation
-- Actual threat lookups using matchy database
-- Packet tree field additions
-- Integration tests with real Wireshark
+**TODO**:
+- Domain name extraction from DNS packets
+- Packet coloring based on threat level
+- Performance optimization for high-throughput captures
 
 ## Wireshark Plugin Development
 
@@ -151,8 +156,8 @@ The threat database is stored in a `static Mutex<Option<Arc<matchy::Database>>>`
 - **Packet Tree**: Hierarchical display of packet data in Wireshark UI
 - **TVB**: Wireshark's "Testy Virtual Buffer" for packet data access
 
-### Expected Display Filters
-Once implemented, analysts will be able to filter packets using:
+### Display Filters
+Analysts can filter packets using:
 ```
 matchy.threat_detected                 # Any threat match
 matchy.level == "critical"             # Specific threat level

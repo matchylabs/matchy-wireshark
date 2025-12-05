@@ -165,6 +165,9 @@ install_plugin() {
                 esac
             fi
         done
+        
+        # Re-sign after modifying library paths (required on modern macOS)
+        codesign -f -s - "$plugin_dir/$plugin_name" 2>/dev/null || true
     fi
     
     info "  Installed successfully"

@@ -157,24 +157,28 @@ jobs:
         if: matrix.platform == 'macos'
         run: |
           PLUGIN="target/${{ matrix.target }}/release/libmatchy_wireshark.${{ matrix.lib_ext }}"
-          ./fix-dylib-paths.sh "$PLUGIN"
+          ./fix-dylib-paths.sh "${PLUGIN}"
           
       - name: Package (Unix)
         if: matrix.platform != 'windows'
         id: package-unix
         run: |
           mkdir -p dist
-          cp target/${{ matrix.target }}/release/libmatchy_wireshark.${{ matrix.lib_ext }} dist/matchy.so
+          cp "target/${{ matrix.target }}/release/libmatchy_wireshark.${{ matrix.lib_ext }}" dist/matchy.so
           cp README.md dist/
           cp install.sh dist/
           
-          # Record Wireshark version this was built against
+          # Get plugin version from Cargo.toml
+          PLUGIN_VERSION=$(grep '^version' Cargo.toml | head -1 | sed -E 's/version = "([^"]+)"/\1/')
+          
+          # Record minimum Wireshark version (what we built against)
           WS_VERSION=$(tshark --version | head -1 | sed -E 's/.*([0-9]+\.[0-9]+)\..*/\1/')
-          echo "$WS_VERSION" > dist/WIRESHARK_VERSION
-          echo "wireshark_version=$WS_VERSION" >> $GITHUB_OUTPUT
+          echo "${WS_VERSION}" > dist/MIN_WIRESHARK_VERSION
+          echo "wireshark_version=${WS_VERSION}" >> "${GITHUB_OUTPUT}"
+          echo "plugin_version=${PLUGIN_VERSION}" >> "${GITHUB_OUTPUT}"
           
           cd dist
-          tar -czvf ../matchy-wireshark-${WS_VERSION}-${{ matrix.platform }}-${{ matrix.arch }}.tar.gz ./*
+          tar -czvf "../matchy-wireshark-plugin-${PLUGIN_VERSION}-wireshark-${WS_VERSION}-${{ matrix.platform }}-${{ matrix.arch }}.tar.gz" ./*
 
       - name: Package (Windows)
         if: matrix.platform == 'windows'
@@ -188,6 +192,9 @@ jobs:
           Copy-Item "README.md" -Destination "dist/"
           Copy-Item "install.ps1" -Destination "dist/"
           
+          # Get plugin version from Cargo.toml
+          $PLUGIN_VERSION = (Select-String -Path "Cargo.toml" -Pattern '^version = "([^"]+)"' | Select-Object -First 1).Matches.Groups[1].Value
+          
           # Get Wireshark version
           $wsVersion = & "C:\Program Files\Wireshark\tshark.exe" --version | Select-Object -First 1
           if ($wsVersion -match '(\d+\.\d+)') {
@@ -196,26 +203,27 @@ jobs:
             $WS_VERSION = "4.6"
           }
           
-          # Record version
-          $WS_VERSION | Out-File -FilePath "dist/WIRESHARK_VERSION" -Encoding ASCII -NoNewline
+          # Record minimum version
+          $WS_VERSION | Out-File -FilePath "dist/MIN_WIRESHARK_VERSION" -Encoding ASCII -NoNewline
           echo "wireshark_version=$WS_VERSION" >> $env:GITHUB_OUTPUT
+          echo "plugin_version=$PLUGIN_VERSION" >> $env:GITHUB_OUTPUT
           
           # Create zip archive
-          Compress-Archive -Path "dist/*" -DestinationPath "matchy-wireshark-$WS_VERSION-${{ matrix.platform }}-${{ matrix.arch }}.zip"
+          Compress-Archive -Path "dist/*" -DestinationPath "matchy-wireshark-plugin-$PLUGIN_VERSION-wireshark-$WS_VERSION-${{ matrix.platform }}-${{ matrix.arch }}.zip"
           
       - name: Upload artifact (Unix)
         if: matrix.platform != 'windows'
         uses: actions/upload-artifact@v4
         with:
-          name: matchy-wireshark-${{ matrix.platform }}-${{ matrix.arch }}
-          path: matchy-wireshark-${{ steps.package-unix.outputs.wireshark_version }}-${{ matrix.platform }}-${{ matrix.arch }}.tar.gz
+          name: matchy-wireshark-plugin-${{ matrix.platform }}-${{ matrix.arch }}
+          path: matchy-wireshark-plugin-${{ steps.package-unix.outputs.plugin_version }}-wireshark-${{ steps.package-unix.outputs.wireshark_version }}-${{ matrix.platform }}-${{ matrix.arch }}.tar.gz
 
       - name: Upload artifact (Windows)
         if: matrix.platform == 'windows'
         uses: actions/upload-artifact@v4
         with:
-          name: matchy-wireshark-${{ matrix.platform }}-${{ matrix.arch }}
-          path: matchy-wireshark-${{ steps.package-windows.outputs.wireshark_version }}-${{ matrix.platform }}-${{ matrix.arch }}.zip
+          name: matchy-wireshark-plugin-${{ matrix.platform }}-${{ matrix.arch }}
+          path: matchy-wireshark-plugin-${{ steps.package-windows.outputs.plugin_version }}-wireshark-${{ steps.package-windows.outputs.wireshark_version }}-${{ matrix.platform }}-${{ matrix.arch }}.zip
 
   release:
     needs: [build]
@@ -229,15 +237,15 @@ jobs:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
-          pattern: matchy-wireshark-*
+          pattern: matchy-wireshark-plugin-*
           path: artifacts
           
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            artifacts/matchy-wireshark-*/*.tar.gz
-            artifacts/matchy-wireshark-*/*.zip
+            artifacts/matchy-wireshark-plugin-*/*.tar.gz
+            artifacts/matchy-wireshark-plugin-*/*.zip
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

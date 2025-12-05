@@ -418,9 +418,12 @@ mod tests {
         assert_eq!(last, 0, "plugin_version must be null-terminated");
 
         // Version should match Cargo.toml
-        let version_str = std::ffi::CStr::from_bytes_until_nul(
-            unsafe { std::slice::from_raw_parts(plugin_version.as_ptr() as *const u8, plugin_version.len()) }
-        ).unwrap().to_str().unwrap();
+        let version_str = std::ffi::CStr::from_bytes_until_nul(unsafe {
+            std::slice::from_raw_parts(plugin_version.as_ptr() as *const u8, plugin_version.len())
+        })
+        .unwrap()
+        .to_str()
+        .unwrap();
         assert_eq!(version_str, env!("CARGO_PKG_VERSION"));
     }
 }

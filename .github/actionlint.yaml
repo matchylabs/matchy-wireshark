@@ -3,3 +3,4 @@ self-hosted-runner:
     - namespace-profile-macos-26-1
     - namespace-profile-linux-amd64
     - namespace-profile-linux-arm64
+    - namespace-profile-windows-amd64

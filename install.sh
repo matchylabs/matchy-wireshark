@@ -66,10 +66,29 @@ detect_wireshark_version() {
     fi
 }
 
-# Get the Wireshark version this package was built for (binary packages only)
-get_package_version() {
-    if [ -f "$SCRIPT_DIR/WIRESHARK_VERSION" ]; then
-        tr -d '\n' < "$SCRIPT_DIR/WIRESHARK_VERSION"
+# Get the minimum Wireshark version required (binary packages only)
+get_min_version() {
+    if [ -f "$SCRIPT_DIR/MIN_WIRESHARK_VERSION" ]; then
+        tr -d '\n' < "$SCRIPT_DIR/MIN_WIRESHARK_VERSION"
+    fi
+}
+
+# Compare versions (returns 0 if v1 >= v2, 1 otherwise)
+version_gte() {
+    v1="$1"
+    v2="$2"
+    # Simple major.minor comparison
+    v1_major=$(echo "$v1" | cut -d. -f1)
+    v1_minor=$(echo "$v1" | cut -d. -f2)
+    v2_major=$(echo "$v2" | cut -d. -f1)
+    v2_minor=$(echo "$v2" | cut -d. -f2)
+    
+    if [ "$v1_major" -gt "$v2_major" ]; then
+        return 0
+    elif [ "$v1_major" -eq "$v2_major" ] && [ "$v1_minor" -ge "$v2_minor" ]; then
+        return 0
+    else
+        return 1
     fi
 }
 
@@ -164,7 +183,7 @@ main() {
     
     # Detect Wireshark version
     installed_version=$(detect_wireshark_version)
-    package_version=$(get_package_version)
+    min_version=$(get_min_version)
     
     if [ -z "$installed_version" ]; then
         error "Error: No Wireshark installation found"
@@ -175,15 +194,18 @@ main() {
         exit 1
     fi
     
-    # Check version compatibility for binary packages
-    if [ -n "$package_version" ] && [ "$package_version" != "$installed_version" ]; then
-        error "Error: Version mismatch"
-        echo "  This plugin was built for Wireshark $package_version"
-        echo "  You have Wireshark $installed_version installed"
-        echo
-        echo "Please download the correct version from:"
-        echo "  https://github.com/matchylabs/matchy-wireshark/releases"
-        exit 1
+    # Check minimum version compatibility for binary packages
+    if [ -n "$min_version" ]; then
+        if ! version_gte "$installed_version" "$min_version"; then
+            error "Error: Wireshark version too old"
+            echo "  This plugin requires Wireshark $min_version or later"
+            echo "  You have Wireshark $installed_version installed"
+            echo
+            echo "Please upgrade Wireshark or download an older plugin version from:"
+            echo "  https://github.com/matchylabs/matchy-wireshark/releases"
+            exit 1
+        fi
+        info "Detected Wireshark $installed_version (requires $min_version+)"
     fi
     
     version="$installed_version"

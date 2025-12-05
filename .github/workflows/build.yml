@@ -11,6 +11,35 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  lint:
+    runs-on: namespace-profile-linux-amd64
+    steps:
+      - uses: namespacelabs/nscloud-checkout-action@v8
+      
+      - name: Install linting tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck devscripts
+      
+      - name: Lint install.sh with shellcheck
+        run: |
+          shellcheck install.sh
+      
+      - name: Check install.sh for bashisms
+        run: |
+          checkbashisms -f install.sh
+      
+      - name: Lint PowerShell script
+        shell: pwsh
+        run: |
+          Install-Module -Name PSScriptAnalyzer -Force -Scope CurrentUser
+          $results = Invoke-ScriptAnalyzer -Path install.ps1 -Severity Error,Warning
+          if ($results) {
+            $results | Format-Table -AutoSize
+            exit 1
+          }
+          Write-Host "PowerShell script passed linting"
+
   build:
     strategy:
       matrix:

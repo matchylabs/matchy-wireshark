@@ -13,6 +13,25 @@ use libc::{c_char, c_int, c_uint, c_void};
 pub type gboolean = c_int;
 
 // ============================================================================
+// Logging
+// ============================================================================
+
+/// Log levels from ws_log_defs.h
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ws_log_level {
+    LOG_LEVEL_NONE = 0,
+    LOG_LEVEL_NOISY = 1,
+    LOG_LEVEL_DEBUG = 2,
+    LOG_LEVEL_INFO = 3,
+    LOG_LEVEL_MESSAGE = 4,
+    LOG_LEVEL_WARNING = 5,
+    LOG_LEVEL_CRITICAL = 6,
+    LOG_LEVEL_ERROR = 7,
+    LOG_LEVEL_ECHO = 8,
+}
+
+// ============================================================================
 // Opaque Types (pointers to Wireshark internal structures)
 // ============================================================================
 
@@ -202,6 +221,17 @@ extern "C" {
         title: *const c_char,
         description: *const c_char,
         var: *mut gboolean,
+    );
+
+    // Logging
+    pub fn ws_log_full(
+        domain: *const c_char,
+        level: ws_log_level,
+        file: *const c_char,
+        line: libc::c_long,
+        func: *const c_char,
+        format: *const c_char,
+        ...
     );
 
     // Dissector handle creation and registration

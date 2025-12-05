@@ -14,7 +14,6 @@ mod wireshark_ffi;
 use libc::{c_char, c_int};
 use std::ffi::CStr;
 use std::sync::Mutex;
-use wireshark_ffi::gboolean;
 
 /// Global threat database handle
 static THREAT_DB: Mutex<Option<matchy::Database>> = Mutex::new(None);
@@ -22,16 +21,25 @@ static THREAT_DB: Mutex<Option<matchy::Database>> = Mutex::new(None);
 /// Database path preference (pointer to C string)
 static mut DATABASE_PATH: *const c_char = std::ptr::null();
 
-/// Debug logging preference
-static mut DEBUG_LOGGING: gboolean = 0;
+/// Our logging domain
+const LOG_DOMAIN: &[u8] = b"Matchy\0";
 
-/// Log a debug message if debug logging is enabled
-macro_rules! debug_log {
-    ($($arg:tt)*) => {
-        if unsafe { DEBUG_LOGGING != 0 } {
-            eprintln!("matchy: {}", format!($($arg)*));
+/// Log a debug message using Wireshark's logging framework
+/// Usage: `wireshark --log-level=debug --log-domain=Matchy`
+macro_rules! ws_debug {
+    ($msg:expr) => {{
+        use wireshark_ffi::ws_log_level;
+        unsafe {
+            wireshark_ffi::ws_log_full(
+                LOG_DOMAIN.as_ptr() as *const c_char,
+                ws_log_level::LOG_LEVEL_DEBUG,
+                std::ptr::null(), // file
+                0,                // line
+                std::ptr::null(), // func
+                $msg.as_ptr() as *const c_char,
+            );
         }
-    };
+    }};
 }
 
 /// Global protocol ID (set during registration)
@@ -232,11 +240,11 @@ static mut ETT_ARRAY: [*mut c_int; 1] = [std::ptr::null_mut()];
 /// Callback invoked when preferences are updated
 /// This is called when the user changes the database path in preferences
 unsafe extern "C" fn preferences_apply() {
-    debug_log!("preferences_apply called");
+    ws_debug!(b"preferences_apply called\0");
 
     // Check if a database path was set
     if DATABASE_PATH.is_null() {
-        debug_log!("no database path configured");
+        ws_debug!(b"no database path configured\0");
         return;
     }
 
@@ -244,11 +252,11 @@ unsafe extern "C" fn preferences_apply() {
     let path = std::ffi::CStr::from_ptr(DATABASE_PATH);
     if let Ok(path_str) = path.to_str() {
         if !path_str.is_empty() {
-            debug_log!("loading database from preference: {}", path_str);
+            ws_debug!(b"loading database from preference\0");
             if matchy_load_database(DATABASE_PATH) == 0 {
-                debug_log!("database loaded successfully");
+                ws_debug!(b"database loaded successfully\0");
             } else {
-                debug_log!("failed to load database");
+                ws_debug!(b"failed to load database\0");
             }
         }
     }
@@ -278,19 +286,6 @@ unsafe fn register_preferences() {
         DB_DESC.as_ptr() as *const c_char,
         std::ptr::addr_of_mut!(DATABASE_PATH),
         0, // for_writing = false (we're reading the database)
-    );
-
-    // Register debug logging preference
-    static DEBUG_NAME: &[u8] = b"debug_logging\0";
-    static DEBUG_TITLE: &[u8] = b"Debug Logging\0";
-    static DEBUG_DESC: &[u8] = b"Enable debug output to stderr\0";
-
-    prefs_register_bool_preference(
-        prefs_module,
-        DEBUG_NAME.as_ptr() as *const c_char,
-        DEBUG_TITLE.as_ptr() as *const c_char,
-        DEBUG_DESC.as_ptr() as *const c_char,
-        std::ptr::addr_of_mut!(DEBUG_LOGGING),
     );
 }
 
@@ -325,12 +320,12 @@ unsafe extern "C" fn proto_reg_handoff_matchy() {
 
     // Try to load database from environment variable
     if let Ok(db_path) = std::env::var("MATCHY_DATABASE") {
-        debug_log!("loading database from MATCHY_DATABASE={}", db_path);
+        ws_debug!(b"loading database from MATCHY_DATABASE\0");
         let path_c = std::ffi::CString::new(db_path).unwrap();
         if matchy_load_database(path_c.as_ptr()) == 0 {
-            debug_log!("database loaded successfully");
+            ws_debug!(b"database loaded successfully\0");
         } else {
-            debug_log!("failed to load database");
+            ws_debug!(b"failed to load database\0");
         }
     }
 

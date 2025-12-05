@@ -127,9 +127,12 @@ install_for() {
     
     mkdir -p "$plugin_dir"
     
-    # Find source binary
+    # Find source binary (check binary package first, then source tree)
     plugin_src=""
-    if [ -f "$SCRIPT_DIR/target/release/libmatchy_wireshark.dylib" ]; then
+    if [ -f "$SCRIPT_DIR/matchy.so" ]; then
+        # Binary package
+        plugin_src="$SCRIPT_DIR/matchy.so"
+    elif [ -f "$SCRIPT_DIR/target/release/libmatchy_wireshark.dylib" ]; then
         plugin_src="$SCRIPT_DIR/target/release/libmatchy_wireshark.dylib"
     elif [ -f "$SCRIPT_DIR/target/release/libmatchy_wireshark.so" ]; then
         plugin_src="$SCRIPT_DIR/target/release/libmatchy_wireshark.so"
@@ -230,10 +233,12 @@ main() {
         exit 0
     fi
     
-    # Build if needed
-    if [ "$force_build" = true ] || { [ ! -f "$SCRIPT_DIR/target/release/libmatchy_wireshark.dylib" ] && \
-                                       [ ! -f "$SCRIPT_DIR/target/release/libmatchy_wireshark.so" ]; }; then
-        build_plugin
+    # Build if needed (only in source tree, not binary packages)
+    if [ -f "$SCRIPT_DIR/Cargo.toml" ]; then
+        if [ "$force_build" = true ] || { [ ! -f "$SCRIPT_DIR/target/release/libmatchy_wireshark.dylib" ] && \
+                                           [ ! -f "$SCRIPT_DIR/target/release/libmatchy_wireshark.so" ]; }; then
+            build_plugin
+        fi
     fi
     
     # Install

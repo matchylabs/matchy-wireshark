@@ -1,9 +1,12 @@
 // build.rs - Wireshark plugin build configuration
 
-use std::path::PathBuf;
+use std::env;
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 fn main() {
+    generate_version();
     // Try to find Wireshark installation
     let wireshark_include = find_wireshark_include();
     let wireshark_lib = find_wireshark_lib();
@@ -250,4 +253,33 @@ fn find_glib_lib() -> Option<PathBuf> {
     }
 
     None
+}
+
+/// Generate plugin_version from Cargo.toml version
+fn generate_version() {
+    let version = env::var("CARGO_PKG_VERSION").unwrap();
+    let out_dir = env::var("OUT_DIR").unwrap();
+    let dest_path = Path::new(&out_dir).join("version.rs");
+
+    // Generate a null-terminated C string array for the version
+    // Format: ['0', '.', '1', '.', '0', '\0']
+    let chars: Vec<String> = version
+        .bytes()
+        .map(|b| format!("b'{}' as libc::c_char", b as char))
+        .chain(std::iter::once("0".to_string()))
+        .collect();
+
+    let array_len = chars.len();
+    let array_contents = chars.join(", ");
+
+    let code = format!(
+        r#"/// Plugin version string (null-terminated)
+/// Auto-generated from Cargo.toml version
+#[no_mangle]
+#[used]
+pub static plugin_version: [libc::c_char; {array_len}] = [{array_contents}];
+"#
+    );
+
+    fs::write(&dest_path, code).unwrap();
 }

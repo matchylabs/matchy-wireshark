@@ -59,17 +59,8 @@ static mut ETT_MATCHY: c_int = -1;
 // Plugin Version Information
 // ============================================================================
 
-/// Plugin version string (null-terminated)
-#[no_mangle]
-#[used]
-pub static plugin_version: [c_char; 6] = [
-    b'0' as c_char,
-    b'.' as c_char,
-    b'1' as c_char,
-    b'.' as c_char,
-    b'0' as c_char,
-    0,
-];
+// Plugin version - auto-generated from Cargo.toml
+include!(concat!(env!("OUT_DIR"), "/version.rs"));
 
 /// Major version of Wireshark this plugin is built for
 #[no_mangle]
@@ -422,6 +413,14 @@ mod tests {
 
     #[test]
     fn test_plugin_version() {
-        assert_eq!(plugin_version[5], 0);
+        // Version should be null-terminated
+        let last = plugin_version[plugin_version.len() - 1];
+        assert_eq!(last, 0, "plugin_version must be null-terminated");
+
+        // Version should match Cargo.toml
+        let version_str = std::ffi::CStr::from_bytes_until_nul(
+            unsafe { std::slice::from_raw_parts(plugin_version.as_ptr() as *const u8, plugin_version.len()) }
+        ).unwrap().to_str().unwrap();
+        assert_eq!(version_str, env!("CARGO_PKG_VERSION"));
     }
 }

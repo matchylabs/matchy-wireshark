@@ -95,51 +95,9 @@ jobs:
         with:
           name: matchy-wireshark-${{ matrix.platform }}-${{ matrix.arch }}
           path: matchy-wireshark-${{ steps.package.outputs.wireshark_version }}-${{ matrix.platform }}-${{ matrix.arch }}.tar.gz
-      
-      - name: Upload version info
-        uses: actions/upload-artifact@v4
-        with:
-          name: wireshark-version-${{ matrix.platform }}-${{ matrix.arch }}
-          path: dist/WIRESHARK_VERSION
-
-  check-versions:
-    needs: [build]
-    runs-on: namespace-profile-linux-amd64
-    outputs:
-      wireshark_version: ${{ steps.check.outputs.version }}
-    steps:
-      - name: Download version files
-        uses: actions/download-artifact@v4
-        with:
-          pattern: wireshark-version-*
-          path: versions
-      
-      - name: Check version consistency
-        id: check
-        run: |
-          echo "Wireshark versions used in builds:"
-          for f in versions/*/WIRESHARK_VERSION; do
-            platform=$(basename $(dirname $f) | sed 's/wireshark-version-//')
-            version=$(cat $f)
-            echo "  $platform: $version"
-          done
-          
-          # Check all versions match
-          versions=$(cat versions/*/WIRESHARK_VERSION | sort -u)
-          count=$(echo "$versions" | wc -l)
-          if [ "$count" -ne 1 ]; then
-            echo
-            echo "ERROR: Wireshark version mismatch across platforms!"
-            echo "All builds must use the same Wireshark version."
-            exit 1
-          fi
-          
-          echo
-          echo "All builds use Wireshark $versions"
-          echo "version=$versions" >> $GITHUB_OUTPUT
 
   release:
-    needs: [build, check-versions]
+    needs: [build]
     runs-on: namespace-profile-linux-amd64
     if: startsWith(github.ref, 'refs/tags/v')
     

@@ -25,27 +25,50 @@ Real-time threat intelligence matching for Wireshark packet analysis.
 ```bash
 cargo build --release
 # Plugin will be at: target/release/libmatchy_wireshark.so (Linux) or .dylib (macOS)
+
+# macOS only: Fix library paths for portability
+./fix-dylib-paths.sh target/release/libmatchy_wireshark.dylib
 ```
 
 ### Install
 
-**macOS:**
+**From source** (after building):
 ```bash
-cp target/release/libmatchy_wireshark.dylib ~/.local/lib/wireshark/plugins/
+# Use the install script (handles version detection and paths)
+./install.sh
+
+# Or install manually:
+# Detect Wireshark version
+WS_VERSION=$(tshark --version | head -1 | sed -E 's/.*([0-9]+\.[0-9]+)\..*/\1/' | tr '.' '-')
+PLUGIN_DIR="$HOME/.local/lib/wireshark/plugins/${WS_VERSION}/epan"
+mkdir -p "$PLUGIN_DIR"
+
+# macOS
+cp target/release/libmatchy_wireshark.dylib "$PLUGIN_DIR/matchy.so"
+
+# Linux  
+cp target/release/libmatchy_wireshark.so "$PLUGIN_DIR/matchy.so"
 ```
 
-**Linux:**
+**From pre-built release**:
 ```bash
-cp target/release/libmatchy_wireshark.so ~/.local/lib/wireshark/plugins/
+# Download from GitHub releases
+tar -xzf matchy-wireshark-*.tar.gz
+cd matchy-wireshark-*/
+./install.sh
 ```
 
 ## Usage
 
 ### 1. Load a threat database
 
-In Wireshark → Preferences → Matchy → Threat Database File:
-- Browse to your .mxy threat intelligence database
-- Restart Wireshark
+In Wireshark, go to **Edit → Preferences → Protocols → Matchy**:
+1. Click the **Browse** button next to "Database Path"
+2. Select your `.mxy` threat intelligence database file
+3. Click **OK** to apply
+4. The database will load immediately (no restart required)
+
+The database path is saved in your Wireshark preferences and will be loaded automatically on startup.
 
 ### 2. Use display filters
 

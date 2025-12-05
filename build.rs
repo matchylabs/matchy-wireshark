@@ -7,22 +7,25 @@ fn main() {
     // Try to find Wireshark installation
     let wireshark_include = find_wireshark_include();
     let wireshark_lib = find_wireshark_lib();
-    
+
     println!("cargo:rerun-if-changed=build.rs");
-    
+
     // Detect Wireshark version and export for the installer
     let wireshark_version = detect_wireshark_version().unwrap_or_else(|| "4.6".to_string());
     println!("cargo:rustc-env=WIRESHARK_VERSION={}", wireshark_version);
     eprintln!("Detected Wireshark version: {}", wireshark_version);
-    
+
     if let Some(include_path) = &wireshark_include {
-        println!("cargo:rustc-env=WIRESHARK_INCLUDE={}", include_path.display());
+        println!(
+            "cargo:rustc-env=WIRESHARK_INCLUDE={}",
+            include_path.display()
+        );
     }
-    
+
     if let Some(lib_path) = &wireshark_lib {
         println!("cargo:rustc-link-search=native={}", lib_path.display());
     }
-    
+
     // Link against Wireshark libraries
     // These are required for calling Wireshark's C API
     #[cfg(target_os = "windows")]
@@ -47,6 +50,10 @@ fn main() {
             println!("cargo:rustc-link-search=native={}", glib_lib.display());
         }
         println!("cargo:rustc-link-lib=dylib=glib-2.0");
+
+        // Tell the linker to use @rpath for these libraries to make
+        // the plugin compatible with both Homebrew and Wireshark.app
+        println!("cargo:rustc-link-arg=-Wl,-install_name,libmatchy_wireshark.dylib");
     }
 
     // On Linux, glib is usually linked via pkg-config or system paths
@@ -54,7 +61,7 @@ fn main() {
     {
         println!("cargo:rustc-link-lib=dylib=glib-2.0");
     }
-    
+
     // Print configuration for debugging
     eprintln!("Wireshark include: {:?}", wireshark_include);
     eprintln!("Wireshark lib: {:?}", wireshark_lib);
@@ -62,23 +69,25 @@ fn main() {
 
 fn detect_wireshark_version() -> Option<String> {
     // Try tshark --version
-    let output = Command::new("tshark")
-        .arg("--version")
-        .output()
-        .ok()?;
-    
+    let output = Command::new("tshark").arg("--version").output().ok()?;
+
     if !output.status.success() {
         return None;
     }
-    
+
     let text = String::from_utf8_lossy(&output.stdout);
-    
+
     // Parse "TShark (Wireshark) 4.6.1" or similar
     for line in text.lines() {
         if line.contains("Wireshark") || line.contains("TShark") {
             for part in line.split_whitespace() {
                 // Look for version number like "4.6.1"
-                if part.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) {
+                if part
+                    .chars()
+                    .next()
+                    .map(|c| c.is_ascii_digit())
+                    .unwrap_or(false)
+                {
                     let version_parts: Vec<&str> = part.split('.').collect();
                     if version_parts.len() >= 2 {
                         return Some(format!("{}.{}", version_parts[0], version_parts[1]));
@@ -87,7 +96,7 @@ fn detect_wireshark_version() -> Option<String> {
             }
         }
     }
-    
+
     None
 }
 
@@ -217,6 +226,7 @@ fn find_wireshark_lib() -> Option<PathBuf> {
     None
 }
 
+#[cfg(target_os = "macos")]
 fn find_glib_lib() -> Option<PathBuf> {
     // Try pkg-config first
     if let Ok(output) = Command::new("pkg-config")
@@ -232,12 +242,12 @@ fn find_glib_lib() -> Option<PathBuf> {
             }
         }
     }
-    
+
     // Common Homebrew location
     let homebrew_glib = PathBuf::from("/opt/homebrew/opt/glib/lib");
     if homebrew_glib.exists() {
         return Some(homebrew_glib);
     }
-    
+
     None
 }

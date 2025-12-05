@@ -3,18 +3,23 @@
 //! Real-time threat intelligence matching for packet analysis.
 //! Integrates matchy threat databases into Wireshark as a postdissector plugin.
 
-mod wireshark_ffi;
+// Wireshark's plugin API requires mutable statics for field registration.
+// This is safe because Wireshark initializes plugins single-threaded.
+#![allow(static_mut_refs)]
+
 mod postdissector;
-mod display_filter;
 mod threats;
+mod wireshark_ffi;
 
 use libc::{c_char, c_int};
 use std::ffi::CStr;
 use std::sync::Mutex;
-use std::ptr;
 
 /// Global threat database handle
 static THREAT_DB: Mutex<Option<matchy::Database>> = Mutex::new(None);
+
+/// Database path preference (pointer to C string)
+static mut DATABASE_PATH: *const c_char = std::ptr::null();
 
 /// Global protocol ID (set during registration)
 static mut PROTO_MATCHY: c_int = -1;
@@ -36,7 +41,9 @@ static mut ETT_MATCHY: c_int = -1;
 /// Plugin version string (null-terminated)
 #[no_mangle]
 #[used]
-pub static plugin_version: [c_char; 6] = [b'0' as i8, b'.' as i8, b'1' as i8, b'.' as i8, b'0' as i8, 0];
+pub static plugin_version: [c_char; 6] = [
+    b'0' as c_char, b'.' as c_char, b'1' as c_char, b'.' as c_char, b'0' as c_char, 0,
+];
 
 /// Major version of Wireshark this plugin is built for
 #[no_mangle]
@@ -74,7 +81,7 @@ extern "C" {
 }
 
 /// Plugin registration - called by Wireshark at startup
-/// 
+///
 /// This registers our plugin with Wireshark's plugin system.
 /// Wireshark will then call our register_protoinfo and register_handoff
 /// functions at the appropriate times during initialization.
@@ -93,29 +100,35 @@ pub extern "C" fn plugin_register() {
 #[no_mangle]
 unsafe extern "C" fn proto_register_matchy() {
     use wireshark_ffi::*;
-    
+
     // Register the protocol
     static NAME: &[u8] = b"Matchy Threat Intelligence\0";
     static SHORT_NAME: &[u8] = b"Matchy\0";
     static FILTER_NAME: &[u8] = b"matchy\0";
-    
+
     PROTO_MATCHY = proto_register_protocol(
         NAME.as_ptr() as *const c_char,
         SHORT_NAME.as_ptr() as *const c_char,
         FILTER_NAME.as_ptr() as *const c_char,
     );
-    
+
     eprintln!("matchy: protocol registered with id {}", PROTO_MATCHY);
-    
+
     // Register header fields
     register_fields();
-    
-    eprintln!("matchy: fields registered, HF_THREAT_DETECTED={}", HF_THREAT_DETECTED);
+
+    eprintln!(
+        "matchy: fields registered, HF_THREAT_DETECTED={}",
+        HF_THREAT_DETECTED
+    );
+
+    // Register preferences
+    register_preferences();
 }
 
 /// Static storage for header field registration info
 /// These MUST be static because Wireshark keeps pointers to them
-static mut HF_ARRAY: [wireshark_ffi::hf_register_info; 5] = unsafe {
+static mut HF_ARRAY: [wireshark_ffi::hf_register_info; 5] = {
     use wireshark_ffi::*;
     [
         hf_register_info {
@@ -127,7 +140,8 @@ static mut HF_ARRAY: [wireshark_ffi::hf_register_info; 5] = unsafe {
                 display: BASE_NONE,
                 strings: std::ptr::null(),
                 bitmask: 0,
-                blurb: b"Whether this packet matches a threat indicator\0".as_ptr() as *const c_char,
+                blurb: b"Whether this packet matches a threat indicator\0".as_ptr()
+                    as *const c_char,
                 id: -1,
                 parent: 0,
                 ref_type: 0,
@@ -209,29 +223,77 @@ static mut HF_ARRAY: [wireshark_ffi::hf_register_info; 5] = unsafe {
 /// Static storage for subtree indices
 static mut ETT_ARRAY: [*mut c_int; 1] = [std::ptr::null_mut()];
 
+/// Callback invoked when preferences are updated
+/// This is called when the user changes the database path in preferences
+unsafe extern "C" fn preferences_apply() {
+    eprintln!("matchy: preferences_apply called");
+
+    // Check if a database path was set
+    if DATABASE_PATH.is_null() {
+        eprintln!("matchy: no database path configured");
+        return;
+    }
+
+    // Try to load the database from the configured path
+    let path = std::ffi::CStr::from_ptr(DATABASE_PATH);
+    if let Ok(path_str) = path.to_str() {
+        if !path_str.is_empty() {
+            eprintln!("matchy: loading database from preference: {}", path_str);
+            if matchy_load_database(DATABASE_PATH) == 0 {
+                eprintln!("matchy: database loaded successfully");
+            } else {
+                eprintln!("matchy: failed to load database from {}", path_str);
+            }
+        }
+    }
+}
+
+/// Register preferences for the protocol
+unsafe fn register_preferences() {
+    use wireshark_ffi::*;
+
+    // Register preferences module for the Matchy protocol
+    // This will appear under Edit -> Preferences -> Protocols -> Matchy
+    let prefs_module = prefs_register_protocol(PROTO_MATCHY, Some(preferences_apply));
+
+    if prefs_module.is_null() {
+        eprintln!("matchy: failed to register preferences module");
+        return;
+    }
+
+    // Register filename preference for database path
+    static NAME: &[u8] = b"database_path\0";
+    static TITLE: &[u8] = b"Database Path\0";
+    static DESC: &[u8] = b"Path to the .mxy threat database file\0";
+
+    prefs_register_filename_preference(
+        prefs_module,
+        NAME.as_ptr() as *const c_char,
+        TITLE.as_ptr() as *const c_char,
+        DESC.as_ptr() as *const c_char,
+        std::ptr::addr_of_mut!(DATABASE_PATH),
+        0, // for_writing = false (we're reading the database)
+    );
+
+    eprintln!("matchy: preferences registered");
+}
+
 /// Register header fields for display and filtering
 unsafe fn register_fields() {
     use wireshark_ffi::*;
-    
+
     // Set up the p_id pointers to point to our static field ID variables
     HF_ARRAY[0].p_id = std::ptr::addr_of_mut!(HF_THREAT_DETECTED);
     HF_ARRAY[1].p_id = std::ptr::addr_of_mut!(HF_THREAT_LEVEL);
     HF_ARRAY[2].p_id = std::ptr::addr_of_mut!(HF_THREAT_CATEGORY);
     HF_ARRAY[3].p_id = std::ptr::addr_of_mut!(HF_THREAT_SOURCE);
     HF_ARRAY[4].p_id = std::ptr::addr_of_mut!(HF_THREAT_INDICATOR);
-    
-    proto_register_field_array(
-        PROTO_MATCHY,
-        HF_ARRAY.as_mut_ptr(),
-        HF_ARRAY.len() as c_int,
-    );
-    
+
+    proto_register_field_array(PROTO_MATCHY, HF_ARRAY.as_mut_ptr(), HF_ARRAY.len() as c_int);
+
     // Register subtree
     ETT_ARRAY[0] = std::ptr::addr_of_mut!(ETT_MATCHY);
-    proto_register_subtree_array(
-        ETT_ARRAY.as_ptr(),
-        ETT_ARRAY.len() as c_int,
-    );
+    proto_register_subtree_array(ETT_ARRAY.as_ptr(), ETT_ARRAY.len() as c_int);
 }
 
 // ============================================================================
@@ -244,7 +306,7 @@ unsafe fn register_fields() {
 #[no_mangle]
 unsafe extern "C" fn proto_reg_handoff_matchy() {
     use wireshark_ffi::*;
-    
+
     // Try to load database from environment variable
     if let Ok(db_path) = std::env::var("MATCHY_DATABASE") {
         eprintln!("matchy: loading database from MATCHY_DATABASE={}", db_path);
@@ -255,11 +317,8 @@ unsafe extern "C" fn proto_reg_handoff_matchy() {
             eprintln!("matchy: failed to load database from {}", db_path);
         }
     }
-    
-    let handle = create_dissector_handle(
-        postdissector::dissect_matchy,
-        PROTO_MATCHY,
-    );
+
+    let handle = create_dissector_handle(postdissector::dissect_matchy, PROTO_MATCHY);
     register_postdissector(handle);
 }
 
@@ -273,12 +332,12 @@ pub extern "C" fn matchy_load_database(path: *const c_char) -> c_int {
     if path.is_null() {
         return -1;
     }
-    
+
     let path_str = match unsafe { CStr::from_ptr(path).to_str() } {
         Ok(s) => s,
         Err(_) => return -1,
     };
-    
+
     match matchy::Database::from(path_str).open() {
         Ok(db) => {
             if let Ok(mut guard) = THREAT_DB.lock() {
@@ -299,7 +358,13 @@ pub extern "C" fn matchy_load_database(path: *const c_char) -> c_int {
 #[no_mangle]
 pub extern "C" fn matchy_database_loaded() -> c_int {
     match THREAT_DB.lock() {
-        Ok(guard) => if guard.is_some() { 1 } else { 0 },
+        Ok(guard) => {
+            if guard.is_some() {
+                1
+            } else {
+                0
+            }
+        }
         Err(_) => 0,
     }
 }
@@ -318,10 +383,6 @@ pub extern "C" fn matchy_unload_database() {
 
 pub(crate) fn get_database() -> Option<std::sync::MutexGuard<'static, Option<matchy::Database>>> {
     THREAT_DB.lock().ok()
-}
-
-pub(crate) fn get_proto_id() -> c_int {
-    unsafe { PROTO_MATCHY }
 }
 
 pub(crate) fn get_hf_ids() -> (c_int, c_int, c_int, c_int, c_int) {

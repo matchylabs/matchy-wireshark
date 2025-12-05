@@ -245,8 +245,13 @@ main() {
     echo "Verify installation:"
     echo "  tshark -G plugins | grep matchy"
     echo
-    echo "Usage:"
-    echo "  MATCHY_DATABASE=/path/to/threats.mxy wireshark capture.pcap"
+    echo "Configuration:"
+    echo "  1. Open Wireshark"
+    echo "  2. Go to Edit → Preferences → Protocols → Matchy"
+    echo "  3. Browse to select your .mxy threat database file"
+    echo
+    echo "Or use environment variable:"
+    echo "  MATCHY_DATABASE=/path/to/threats.mxy wireshark"
     echo
 }
 

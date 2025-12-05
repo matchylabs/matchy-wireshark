@@ -50,8 +50,8 @@ pub type dissector_handle_t = *mut dissector_handle;
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct address {
-    pub type_: c_int,     // address_type enum
-    pub len: c_int,       // length of data
+    pub type_: c_int, // address_type enum
+    pub len: c_int,   // length of data
     pub data: *const c_void,
     pub priv_: *mut c_void,
 }
@@ -62,8 +62,8 @@ pub struct address {
 
 pub const AT_NONE: c_int = 0;
 pub const AT_ETHER: c_int = 1;
-pub const AT_IPv4: c_int = 2;
-pub const AT_IPv6: c_int = 3;
+pub const AT_IPV4: c_int = 2;
+pub const AT_IPV6: c_int = 3;
 
 // ============================================================================
 // Field Types (from epan/ftypes/ftypes.h)
@@ -116,7 +116,7 @@ pub type dissector_t = unsafe extern "C" fn(
 /// This must match Wireshark's hf_register_info structure layout
 #[repr(C)]
 pub struct hf_register_info {
-    pub p_id: *mut c_int,           // pointer to field ID variable
+    pub p_id: *mut c_int, // pointer to field ID variable
     pub hfinfo: header_field_info,
 }
 
@@ -124,22 +124,35 @@ pub struct hf_register_info {
 pub struct header_field_info {
     pub name: *const c_char,
     pub abbrev: *const c_char,
-    pub type_: c_int,               // ftenum
-    pub display: c_int,             // field_display_e
-    pub strings: *const c_void,     // value_string or similar
-    pub bitmask: u64,               // uint64_t
+    pub type_: c_int,           // ftenum
+    pub display: c_int,         // field_display_e
+    pub strings: *const c_void, // value_string or similar
+    pub bitmask: u64,           // uint64_t
     pub blurb: *const c_char,
     // Internal fields - Wireshark fills these in (HFILL macro sets these)
-    pub id: c_int,                  // -1
-    pub parent: c_int,              // 0
-    pub ref_type: c_int,            // HF_REF_TYPE_NONE = 0
-    pub same_name_prev_id: c_int,   // -1
-    pub same_name_next: *mut header_field_info,  // NULL
+    pub id: c_int,                              // -1
+    pub parent: c_int,                          // 0
+    pub ref_type: c_int,                        // HF_REF_TYPE_NONE = 0
+    pub same_name_prev_id: c_int,               // -1
+    pub same_name_next: *mut header_field_info, // NULL
 }
 
 // ============================================================================
 // External Wireshark Functions
 // ============================================================================
+
+// ============================================================================
+// Preferences Module
+// ============================================================================
+
+/// Opaque preferences module pointer
+#[repr(C)]
+pub struct module_t {
+    _opaque: [u8; 0],
+}
+
+/// Preference update callback
+pub type pref_cb = unsafe extern "C" fn();
 
 extern "C" {
     // Protocol registration
@@ -149,22 +162,39 @@ extern "C" {
         filter_name: *const c_char,
     ) -> c_int;
 
-    pub fn proto_register_field_array(
-        parent: c_int,
-        hf: *mut hf_register_info,
-        num_records: c_int,
-    );
+    pub fn proto_register_field_array(parent: c_int, hf: *mut hf_register_info, num_records: c_int);
 
-    pub fn proto_register_subtree_array(
-        indices: *const *mut c_int,
-        num_indices: c_int,
+    pub fn proto_register_subtree_array(indices: *const *mut c_int, num_indices: c_int);
+
+    // Preferences registration
+    pub fn prefs_register_protocol(proto: c_int, apply_cb: Option<pref_cb>) -> *mut module_t;
+
+    pub fn prefs_register_module(
+        parent: *mut module_t,
+        name: *const c_char,
+        title: *const c_char,
+        description: *const c_char,
+        apply_cb: Option<pref_cb>,
+    ) -> *mut module_t;
+
+    pub fn prefs_register_subtree(
+        parent: *mut module_t,
+        name: *const c_char,
+        title: *const c_char,
+        apply_cb: Option<pref_cb>,
+    ) -> *mut module_t;
+
+    pub fn prefs_register_filename_preference(
+        module: *mut module_t,
+        name: *const c_char,
+        title: *const c_char,
+        description: *const c_char,
+        var: *mut *const c_char,
+        for_writing: c_int,
     );
 
     // Dissector handle creation and registration
-    pub fn create_dissector_handle(
-        dissector: dissector_t,
-        proto: c_int,
-    ) -> dissector_handle_t;
+    pub fn create_dissector_handle(dissector: dissector_t, proto: c_int) -> dissector_handle_t;
 
     pub fn register_postdissector(handle: dissector_handle_t);
 
@@ -196,10 +226,7 @@ extern "C" {
         value: c_uint,
     ) -> *mut proto_item;
 
-    pub fn proto_item_add_subtree(
-        pi: *mut proto_item,
-        idx: c_int,
-    ) -> *mut proto_tree;
+    pub fn proto_item_add_subtree(pi: *mut proto_item, idx: c_int) -> *mut proto_tree;
 
     // TVB accessors
     pub fn tvb_captured_length(tvb: *mut tvbuff_t) -> c_uint;
@@ -208,22 +235,22 @@ extern "C" {
 
 // ============================================================================
 // packet_info field accessors
-// 
+//
 // Since packet_info is a large struct with many fields, we access
 // src/dst addresses by calculating offsets. This is fragile but
 // avoids needing the full struct definition.
-// 
+//
 // Alternative: use Wireshark's exported accessor functions if available.
 // ============================================================================
 
 /// Offset to 'src' address in packet_info (Wireshark 4.6)
 /// This is calculated from the packet_info struct definition.
 /// WARNING: This offset may change between Wireshark versions!
-const PINFO_SRC_OFFSET: usize = 208;  // Verified for Wireshark 4.6
-const PINFO_DST_OFFSET: usize = 232;  // Verified for Wireshark 4.6
+const PINFO_SRC_OFFSET: usize = 208; // Verified for Wireshark 4.6
+const PINFO_DST_OFFSET: usize = 232; // Verified for Wireshark 4.6
 
 /// Get source address from packet_info
-/// 
+///
 /// # Safety
 /// Caller must ensure pinfo is valid
 pub unsafe fn pinfo_get_src(pinfo: *const packet_info) -> *const address {
@@ -231,7 +258,7 @@ pub unsafe fn pinfo_get_src(pinfo: *const packet_info) -> *const address {
 }
 
 /// Get destination address from packet_info
-/// 
+///
 /// # Safety
 /// Caller must ensure pinfo is valid
 pub unsafe fn pinfo_get_dst(pinfo: *const packet_info) -> *const address {
@@ -245,7 +272,7 @@ pub unsafe fn address_to_ipv4(addr: *const address) -> Option<[u8; 4]> {
         return None;
     }
     let addr_ref = &*addr;
-    if addr_ref.type_ != AT_IPv4 || addr_ref.len != 4 || addr_ref.data.is_null() {
+    if addr_ref.type_ != AT_IPV4 || addr_ref.len != 4 || addr_ref.data.is_null() {
         return None;
     }
     let data = addr_ref.data as *const u8;
@@ -259,7 +286,7 @@ pub unsafe fn address_to_ipv6(addr: *const address) -> Option<[u8; 16]> {
         return None;
     }
     let addr_ref = &*addr;
-    if addr_ref.type_ != AT_IPv6 || addr_ref.len != 16 || addr_ref.data.is_null() {
+    if addr_ref.type_ != AT_IPV6 || addr_ref.len != 16 || addr_ref.data.is_null() {
         return None;
     }
     let mut result = [0u8; 16];

@@ -2,7 +2,6 @@
 //!
 //! Handles IP/domain lookups and visual threat indicators.
 
-use serde_json::{json, Value};
 
 /// Threat level representation
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -28,6 +27,7 @@ impl ThreatLevel {
 
     /// Convert ThreatLevel to Wireshark color code
     /// Returns (r, g, b) tuple
+    #[cfg(test)]
     pub fn wireshark_color(&self) -> (u8, u8, u8) {
         match self {
             ThreatLevel::Critical => (0xFF, 0x00, 0x00), // Red
@@ -56,6 +56,7 @@ pub struct ThreatData {
     pub level: ThreatLevel,
     pub category: String,
     pub source: String,
+    #[allow(dead_code)] // Stored for future detailed threat view
     pub metadata: serde_json::Value,
 }
 
@@ -88,31 +89,12 @@ impl ThreatData {
         })
     }
 
-    /// Convert to JSON for Wireshark display
-    pub fn to_json(&self) -> serde_json::Value {
-        json!({
-            "threat_detected": true,
-            "level": self.level.display_str(),
-            "category": self.category,
-            "source": self.source,
-            "metadata": self.metadata
-        })
-    }
-}
-
-/// Lookup indicator in threat database
-pub fn lookup_threat(_indicator: &str) -> Option<ThreatData> {
-    // TODO: Call matchy database lookup
-    // Examples:
-    // - IP: "1.2.3.4"
-    // - CIDR: "1.2.3.0/24"
-    // - Domain: "evil.com" or "*.evil.com"
-    None
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn test_threat_level_colors() {

@@ -182,7 +182,11 @@ jobs:
           $env:PATH -split ';' | Select-String -Pattern "Wireshark"
           Write-Host ""
           Write-Host "Wireshark DLLs present:"
-          Get-ChildItem "C:\Program Files\Wireshark\*.dll" | Select-Object Name | Select-Object -First 10
+          Get-ChildItem "C:\Program Files\Wireshark\*.dll" | Select-Object Name
+          Write-Host ""
+          Write-Host "Looking for wireshark/wsutil DLLs:"
+          Get-ChildItem "C:\Program Files\Wireshark\*wireshark*.dll" -ErrorAction SilentlyContinue | Select-Object Name
+          Get-ChildItem "C:\Program Files\Wireshark\*wsutil*.dll" -ErrorAction SilentlyContinue | Select-Object Name
           Write-Host ""
           Write-Host "Plugin file exists:"
           Get-ChildItem "$env:APPDATA\Wireshark\plugins\4.6\epan\" -ErrorAction SilentlyContinue

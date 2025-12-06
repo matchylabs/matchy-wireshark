@@ -197,8 +197,12 @@ jobs:
           Write-Host "Plugin imports from libwireshark:"
           dumpbin /imports "$env:APPDATA\Wireshark\plugins\4.6\epan\matchy.dll" 2>&1 | Select-String -Pattern "libwireshark" -Context 0,30
           Write-Host ""
-          Write-Host "libwireshark.dll exports (first 50):"
-          dumpbin /exports "C:\Program Files\Wireshark\libwireshark.dll" 2>&1 | Select-Object -First 50
+          Write-Host "Checking if our imports exist in libwireshark exports:"
+          $exports = dumpbin /exports "C:\Program Files\Wireshark\libwireshark.dll" 2>&1
+          @("proto_register_protocol", "proto_register_plugin", "proto_tree_add_string", "proto_tree_add_boolean", "proto_item_add_subtree", "create_dissector_handle", "register_postdissector", "proto_register_field_array", "proto_register_subtree_array", "prefs_register_protocol", "prefs_register_filename_preference", "ws_log_full") | ForEach-Object {
+            $found = $exports | Select-String -Pattern $_ -SimpleMatch
+            if ($found) { Write-Host "  FOUND: $_" } else { Write-Host "  MISSING: $_" }
+          }
           Write-Host ""
           Write-Host "Wireshark version:"
           tshark --version 2>&1 | Select-Object -First 3

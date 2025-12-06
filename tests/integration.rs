@@ -52,37 +52,25 @@ fn get_tshark_version() -> Option<String> {
 /// Get the path to the built plugin library
 fn get_built_plugin_path() -> Option<PathBuf> {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let target_dir = manifest_dir.join("target");
 
+    // Check release build first, then debug
     #[cfg(target_os = "windows")]
-    let plugin_name = "matchy_wireshark_plugin.dll";
-    #[cfg(target_os = "macos")]
-    let plugin_name = "libmatchy_wireshark_plugin.dylib";
-    #[cfg(target_os = "linux")]
-    let plugin_name = "libmatchy_wireshark_plugin.so";
-
-    // Build list of candidate paths
-    let mut candidates: Vec<PathBuf> = vec![
-        // Direct paths (local builds without --target)
-        target_dir.join("release").join(plugin_name),
-        target_dir.join("debug").join(plugin_name),
+    let candidates = [
+        manifest_dir.join("target/release/matchy_wireshark_plugin.dll"),
+        manifest_dir.join("target/debug/matchy_wireshark_plugin.dll"),
     ];
 
-    // Also check target-triple subdirectories (CI builds with --target)
-    if let Ok(entries) = std::fs::read_dir(&target_dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
-                    // Target triples have at least 2 hyphens (e.g. x86_64-unknown-linux-gnu)
-                    if name.matches('-').count() >= 2 {
-                        candidates.push(path.join("release").join(plugin_name));
-                        candidates.push(path.join("debug").join(plugin_name));
-                    }
-                }
-            }
-        }
-    }
+    #[cfg(target_os = "macos")]
+    let candidates = [
+        manifest_dir.join("target/release/libmatchy_wireshark_plugin.dylib"),
+        manifest_dir.join("target/debug/libmatchy_wireshark_plugin.dylib"),
+    ];
+
+    #[cfg(target_os = "linux")]
+    let candidates = [
+        manifest_dir.join("target/release/libmatchy_wireshark_plugin.so"),
+        manifest_dir.join("target/debug/libmatchy_wireshark_plugin.so"),
+    ];
 
     candidates.into_iter().find(|p| p.exists())
 }

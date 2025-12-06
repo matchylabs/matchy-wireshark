@@ -43,22 +43,18 @@ jobs:
           - os: namespace-profile-macos-26-1
             platform: macos
             arch: arm64
-            target: aarch64-apple-darwin
             lib_ext: dylib
           - os: namespace-profile-linux-amd64
             platform: linux
             arch: x86_64
-            target: x86_64-unknown-linux-gnu
             lib_ext: so
           - os: namespace-profile-linux-arm64
             platform: linux
             arch: aarch64
-            target: aarch64-unknown-linux-gnu
             lib_ext: so
           - os: namespace-profile-windows-amd64
             platform: windows
             arch: x86_64
-            target: x86_64-pc-windows-msvc
             lib_ext: dll
     
     runs-on: ${{ matrix.os }}
@@ -86,8 +82,6 @@ jobs:
       
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
       
       - name: Install Wireshark (macOS)
         if: matrix.platform == 'macos'
@@ -138,9 +132,9 @@ jobs:
           mkdir -p plugins
           for WS_VER in $WIRESHARK_VERSIONS; do
             echo "Building for Wireshark $WS_VER..."
-            WIRESHARK_VERSION=$WS_VER cargo build --release --target ${{ matrix.target }}
+            WIRESHARK_VERSION=$WS_VER cargo build --release
             mkdir -p "plugins/$WS_VER"
-            cp "target/${{ matrix.target }}/release/libmatchy_wireshark_plugin.${{ matrix.lib_ext }}" "plugins/$WS_VER/matchy.so"
+            cp "target/release/libmatchy_wireshark_plugin.${{ matrix.lib_ext }}" "plugins/$WS_VER/matchy.so"
           done
           
       - name: Build for all Wireshark versions (Windows)
@@ -152,9 +146,9 @@ jobs:
           foreach ($wsVer in $versions) {
             Write-Host "Building for Wireshark $wsVer..."
             $env:WIRESHARK_VERSION = $wsVer
-            cargo build --release --target ${{ matrix.target }}
+            cargo build --release
             New-Item -ItemType Directory -Force -Path "plugins/$wsVer" | Out-Null
-            Copy-Item "target/${{ matrix.target }}/release/matchy_wireshark_plugin.dll" -Destination "plugins/$wsVer/matchy.dll"
+            Copy-Item "target/release/matchy_wireshark_plugin.dll" -Destination "plugins/$wsVer/matchy.dll"
           }
           
       - name: Fix library paths (macOS only)

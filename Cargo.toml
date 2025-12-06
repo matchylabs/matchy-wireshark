@@ -18,7 +18,7 @@ name = "matchy_wireshark_plugin"
 crate-type = ["cdylib"]
 
 [dependencies]
-matchy = { git = "https://github.com/matchylabs/matchy", branch = "main" }
+matchy = { git = "https://github.com/matchylabs/matchy", branch = "main", default-features = false }
 matchy-data-format = { git = "https://github.com/matchylabs/matchy", branch = "main" }
 libc = "0.2"
 serde_json = "1.0"

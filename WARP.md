@@ -104,6 +104,10 @@ The plugin uses Rust FFI to interface with Wireshark's C API:
 - `extern "C"` functions for C calling convention
 - Uses `libc` types (`c_char`, `c_int`, `c_void`)
 - Compiled as `cdylib` for dynamic loading
+- On Windows, uses `raw-dylib` linking to avoid needing import libraries
+- FFI functions are split into separate `extern` blocks based on which DLL exports them:
+  - `libwireshark.dll`: protocol registration, tree functions, preferences
+  - `libwsutil.dll`: logging functions (`ws_log_full`)
 
 ### Thread Safety
 
@@ -178,11 +182,13 @@ Each module has inline tests:
 - Test with: `cargo test`
 
 ### Integration Testing
-Will require:
-1. Building sample `.mxy` threat databases
-2. Loading in Wireshark and capturing traffic
-3. Verifying correct threat detection and display
-4. Performance profiling under load
+The integration test (`cargo test --test integration`) is self-contained:
+- Automatically detects Wireshark version from `tshark --version`
+- Creates temp plugin directory with correct structure (`X.Y/epan/`)
+- Copies freshly-built plugin to temp dir
+- Uses `WIRESHARK_PLUGIN_DIR` env var to load plugin
+- Runs tshark against test pcap with test threat database
+- No manual installation required
 
 ### Test Database Creation
 Use the matchy CLI to build test databases:

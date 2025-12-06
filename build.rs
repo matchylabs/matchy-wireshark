@@ -262,10 +262,10 @@ fn read_wireshark_version() -> (i32, i32) {
             return (major, minor);
         }
     }
-    
+
     // Fall back to Cargo.toml
     let cargo_toml = fs::read_to_string("Cargo.toml").expect("Failed to read Cargo.toml");
-    
+
     // Simple parsing - look for wireshark_version = "X.Y"
     for line in cargo_toml.lines() {
         let line = line.trim();
@@ -278,7 +278,7 @@ fn read_wireshark_version() -> (i32, i32) {
             }
         }
     }
-    
+
     // Default to 4.6 if not found
     eprintln!("Warning: wireshark_version not found, defaulting to 4.6");
     (4, 6)

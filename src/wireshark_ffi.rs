@@ -306,7 +306,7 @@ extern "C" {
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct nstime_t {
-    pub secs: i64,  // time_t is typically i64
+    pub secs: i64, // time_t is typically i64
     pub nsecs: i32,
 }
 
@@ -321,27 +321,27 @@ pub struct pinfo_flags {
 /// This must match the C struct layout exactly!
 #[repr(C)]
 pub struct packet_info_full {
-    pub current_proto: *const c_char,           // const char*
-    pub cinfo: *mut c_void,                     // struct epan_column_info*
-    pub presence_flags: u32,                    // uint32_t
-    pub num: u32,                               // uint32_t (frame number)
-    pub abs_ts: nstime_t,                       // nstime_t
-    pub rel_ts: nstime_t,                       // nstime_t
-    pub rel_cap_ts: nstime_t,                   // nstime_t
-    pub rel_cap_ts_present: bool,               // bool
+    pub current_proto: *const c_char, // const char*
+    pub cinfo: *mut c_void,           // struct epan_column_info*
+    pub presence_flags: u32,          // uint32_t
+    pub num: u32,                     // uint32_t (frame number)
+    pub abs_ts: nstime_t,             // nstime_t
+    pub rel_ts: nstime_t,             // nstime_t
+    pub rel_cap_ts: nstime_t,         // nstime_t
+    pub rel_cap_ts_present: bool,     // bool
     // Padding for alignment (bool is 1 byte, next is pointer)
     _pad1: [u8; 7],
-    pub fd: *mut c_void,                        // frame_data*
-    pub pseudo_header: *mut c_void,             // union wtap_pseudo_header*
-    pub rec: *mut c_void,                       // wtap_rec*
-    pub data_src: *mut c_void,                  // GSList*
-    pub dl_src: address,                        // address (link-layer source)
-    pub dl_dst: address,                        // address (link-layer dest)
-    pub net_src: address,                       // address (network-layer source)
-    pub net_dst: address,                       // address (network-layer dest)
-    pub src: address,                           // address (source - net if present, DL otherwise)
-    pub dst: address,                           // address (dest - net if present, DL otherwise)
-    // We don't need fields beyond this point
+    pub fd: *mut c_void,            // frame_data*
+    pub pseudo_header: *mut c_void, // union wtap_pseudo_header*
+    pub rec: *mut c_void,           // wtap_rec*
+    pub data_src: *mut c_void,      // GSList*
+    pub dl_src: address,            // address (link-layer source)
+    pub dl_dst: address,            // address (link-layer dest)
+    pub net_src: address,           // address (network-layer source)
+    pub net_dst: address,           // address (network-layer dest)
+    pub src: address,               // address (source - net if present, DL otherwise)
+    pub dst: address,               // address (dest - net if present, DL otherwise)
+                                    // We don't need fields beyond this point
 }
 
 /// Get source address from packet_info
@@ -377,7 +377,7 @@ pub unsafe fn address_to_ipv4(addr: *const address) -> Option<[u8; 4]> {
         return None;
     }
     let addr_ref = &*addr;
-    
+
     // Defensive checks:
     // 1. Type must be AT_IPV4 (value 2)
     // 2. Length must be exactly 4 bytes
@@ -391,7 +391,7 @@ pub unsafe fn address_to_ipv4(addr: *const address) -> Option<[u8; 4]> {
     if addr_ref.data.is_null() {
         return None;
     }
-    
+
     let data = addr_ref.data as *const u8;
     Some([*data, *data.add(1), *data.add(2), *data.add(3)])
 }
@@ -403,7 +403,7 @@ pub unsafe fn address_to_ipv6(addr: *const address) -> Option<[u8; 16]> {
         return None;
     }
     let addr_ref = &*addr;
-    
+
     // Defensive checks:
     // 1. Type must be AT_IPV6 (value 3)
     // 2. Length must be exactly 16 bytes
@@ -417,7 +417,7 @@ pub unsafe fn address_to_ipv6(addr: *const address) -> Option<[u8; 16]> {
     if addr_ref.data.is_null() {
         return None;
     }
-    
+
     let data = addr_ref.data as *const [u8; 16];
     Some(*data)
 }

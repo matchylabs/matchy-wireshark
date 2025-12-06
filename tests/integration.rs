@@ -32,7 +32,12 @@ fn get_tshark_version() -> Option<String> {
     for line in text.lines() {
         if line.contains("Wireshark") || line.contains("TShark") {
             for part in line.split_whitespace() {
-                if part.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) {
+                if part
+                    .chars()
+                    .next()
+                    .map(|c| c.is_ascii_digit())
+                    .unwrap_or(false)
+                {
                     let parts: Vec<&str> = part.split('.').collect();
                     if parts.len() >= 2 {
                         return Some(format!("{}.{}", parts[0], parts[1]));
@@ -47,49 +52,49 @@ fn get_tshark_version() -> Option<String> {
 /// Get the path to the built plugin library
 fn get_built_plugin_path() -> Option<PathBuf> {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    
+
     // Check release build first, then debug
     #[cfg(target_os = "windows")]
     let candidates = [
         manifest_dir.join("target/release/matchy_wireshark_plugin.dll"),
         manifest_dir.join("target/debug/matchy_wireshark_plugin.dll"),
     ];
-    
+
     #[cfg(target_os = "macos")]
     let candidates = [
         manifest_dir.join("target/release/libmatchy_wireshark_plugin.dylib"),
         manifest_dir.join("target/debug/libmatchy_wireshark_plugin.dylib"),
     ];
-    
+
     #[cfg(target_os = "linux")]
     let candidates = [
         manifest_dir.join("target/release/libmatchy_wireshark_plugin.so"),
         manifest_dir.join("target/debug/libmatchy_wireshark_plugin.so"),
     ];
-    
+
     candidates.into_iter().find(|p| p.exists())
 }
 
 /// Set up a temporary plugin directory structure for testing.
 /// Returns the path to the temp plugin dir (set WIRESHARK_PLUGIN_DIR to this).
 fn setup_test_plugin_dir(wireshark_version: &str) -> PathBuf {
-    let plugin_path = get_built_plugin_path()
-        .expect("Built plugin not found - run 'cargo build' first");
-    
+    let plugin_path =
+        get_built_plugin_path().expect("Built plugin not found - run 'cargo build' first");
+
     // Create temp directory structure: temp/X.Y/epan/
     let temp_dir = std::env::temp_dir().join("matchy-wireshark-test");
     let plugin_dir = temp_dir.join(wireshark_version).join("epan");
     std::fs::create_dir_all(&plugin_dir).expect("Failed to create temp plugin directory");
-    
+
     // Copy plugin to temp dir with correct name
     #[cfg(target_os = "windows")]
     let dest_name = "matchy.dll";
     #[cfg(not(target_os = "windows"))]
     let dest_name = "matchy.so";
-    
+
     let dest_path = plugin_dir.join(dest_name);
     std::fs::copy(&plugin_path, &dest_path).expect("Failed to copy plugin to temp directory");
-    
+
     temp_dir
 }
 
@@ -199,8 +204,14 @@ fn parse_tshark_output(output: &str) -> Result<Vec<PacketResult>, String> {
             src_ip: fields[1].to_string(),
             dst_ip: fields[2].to_string(),
             threat_detected,
-            threat_level: fields.get(4).filter(|s| !s.is_empty()).map(|s| s.to_string()),
-            category: fields.get(5).filter(|s| !s.is_empty()).map(|s| s.to_string()),
+            threat_level: fields
+                .get(4)
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string()),
+            category: fields
+                .get(5)
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string()),
         });
     }
 
@@ -210,8 +221,8 @@ fn parse_tshark_output(output: &str) -> Result<Vec<PacketResult>, String> {
 #[test]
 fn test_plugin_integration() {
     // Get Wireshark version
-    let ws_version = get_tshark_version()
-        .expect("tshark not found in PATH - install Wireshark/tshark first");
+    let ws_version =
+        get_tshark_version().expect("tshark not found in PATH - install Wireshark/tshark first");
     eprintln!("Detected Wireshark version: {}", ws_version);
 
     // Set up temp plugin directory with the freshly-built plugin
@@ -232,7 +243,10 @@ fn test_plugin_integration() {
     let pkt1 = &results[0];
     assert_eq!(pkt1.frame_number, 1);
     assert_eq!(pkt1.dst_ip, "192.168.1.1");
-    assert!(pkt1.threat_detected, "Frame 1 should detect threat on dst IP");
+    assert!(
+        pkt1.threat_detected,
+        "Frame 1 should detect threat on dst IP"
+    );
     assert_eq!(
         pkt1.threat_level.as_deref(),
         Some("High"),

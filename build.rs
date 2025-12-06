@@ -30,18 +30,10 @@ fn main() {
     }
 
     // Link against Wireshark libraries
-    // These are required for calling Wireshark's C API
-    #[cfg(target_os = "windows")]
-    {
-        // Windows uses .lib files for linking
-        println!("cargo:rustc-link-lib=wireshark");
-        println!("cargo:rustc-link-lib=wsutil");
-        println!("cargo:rustc-link-lib=glib-2.0");
-    }
-
+    // On Windows, we use raw-dylib in wireshark_ffi.rs instead of import libraries.
+    // On Unix, we need to tell the linker about the libraries.
     #[cfg(not(target_os = "windows"))]
     {
-        // Unix-like systems use dynamic linking
         println!("cargo:rustc-link-lib=dylib=wireshark");
         println!("cargo:rustc-link-lib=dylib=wsutil");
     }
@@ -103,45 +95,26 @@ fn detect_wireshark_version() -> Option<String> {
     None
 }
 
+/// Find Wireshark include directory (Unix only, for reference).
+/// We use hand-written FFI bindings, so this is informational only.
+#[cfg(not(target_os = "windows"))]
 fn find_wireshark_include() -> Option<PathBuf> {
-    // On Windows, check WIRESHARK_DIR environment variable first
-    #[cfg(target_os = "windows")]
+    // Try pkg-config first
+    if let Ok(output) = Command::new("pkg-config")
+        .args(["--cflags-only-I", "wireshark"])
+        .output()
     {
-        if let Ok(wireshark_dir) = std::env::var("WIRESHARK_DIR") {
-            let include_path = PathBuf::from(&wireshark_dir).join("include");
-            if include_path.exists() {
-                return Some(include_path);
-            }
-        }
-    }
-
-    // Try pkg-config first (Unix-like systems)
-    #[cfg(not(target_os = "windows"))]
-    {
-        if let Ok(output) = Command::new("pkg-config")
-            .args(["--cflags-only-I", "wireshark"])
-            .output()
-        {
-            if output.status.success() {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                for part in stdout.split_whitespace() {
-                    if let Some(path) = part.strip_prefix("-I") {
-                        return Some(PathBuf::from(path));
-                    }
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            for part in stdout.split_whitespace() {
+                if let Some(path) = part.strip_prefix("-I") {
+                    return Some(PathBuf::from(path));
                 }
             }
         }
     }
 
-    // Try common locations based on platform
-    #[cfg(target_os = "windows")]
-    let candidates = [
-        r"C:\Wireshark\include",
-        r"C:\Program Files\Wireshark\include",
-        r"C:\Program Files (x86)\Wireshark\include",
-    ];
-
-    #[cfg(not(target_os = "windows"))]
+    // Try common locations
     let candidates = [
         "/opt/homebrew/include/wireshark",
         "/usr/local/include/wireshark",
@@ -158,53 +131,32 @@ fn find_wireshark_include() -> Option<PathBuf> {
     None
 }
 
+#[cfg(target_os = "windows")]
+fn find_wireshark_include() -> Option<PathBuf> {
+    // We use hand-written FFI bindings, no headers needed.
+    None
+}
+
+/// Find Wireshark library directory (Unix only).
+/// On Windows, we use raw-dylib linking which doesn't need library search paths.
+#[cfg(not(target_os = "windows"))]
 fn find_wireshark_lib() -> Option<PathBuf> {
-    // On Windows, check WIRESHARK_DIR environment variable first
-    #[cfg(target_os = "windows")]
+    // Try pkg-config first
+    if let Ok(output) = Command::new("pkg-config")
+        .args(["--libs-only-L", "wireshark"])
+        .output()
     {
-        if let Ok(wireshark_dir) = std::env::var("WIRESHARK_DIR") {
-            let lib_path = PathBuf::from(&wireshark_dir);
-            // Check both root dir and lib subdirectory
-            let check_paths = [lib_path.clone(), lib_path.join("lib")];
-            for path in &check_paths {
-                let wireshark_lib = path.join("wireshark.lib");
-                if wireshark_lib.exists() {
-                    return Some(path.clone());
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            for part in stdout.split_whitespace() {
+                if let Some(path) = part.strip_prefix("-L") {
+                    return Some(PathBuf::from(path));
                 }
             }
         }
     }
 
-    // Try pkg-config first (Unix-like systems)
-    #[cfg(not(target_os = "windows"))]
-    {
-        if let Ok(output) = Command::new("pkg-config")
-            .args(["--libs-only-L", "wireshark"])
-            .output()
-        {
-            if output.status.success() {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                for part in stdout.split_whitespace() {
-                    if let Some(path) = part.strip_prefix("-L") {
-                        return Some(PathBuf::from(path));
-                    }
-                }
-            }
-        }
-    }
-
-    // Try common locations based on platform
-    #[cfg(target_os = "windows")]
-    let candidates: Vec<PathBuf> = vec![
-        PathBuf::from(r"C:\Wireshark"),
-        PathBuf::from(r"C:\Wireshark\lib"),
-        PathBuf::from(r"C:\Program Files\Wireshark"),
-        PathBuf::from(r"C:\Program Files\Wireshark\lib"),
-        PathBuf::from(r"C:\Program Files (x86)\Wireshark"),
-        PathBuf::from(r"C:\Program Files (x86)\Wireshark\lib"),
-    ];
-
-    #[cfg(not(target_os = "windows"))]
+    // Try common locations
     let candidates: Vec<PathBuf> = vec![
         PathBuf::from("/opt/homebrew/lib"),
         PathBuf::from("/usr/local/lib"),
@@ -213,21 +165,20 @@ fn find_wireshark_lib() -> Option<PathBuf> {
     ];
 
     for candidate in &candidates {
-        #[cfg(target_os = "windows")]
-        let wireshark_exists = candidate.join("wireshark.lib").exists();
-
-        #[cfg(not(target_os = "windows"))]
-        let wireshark_exists = {
-            let wireshark_lib = candidate.join("libwireshark.dylib");
-            let wireshark_so = candidate.join("libwireshark.so");
-            wireshark_lib.exists() || wireshark_so.exists()
-        };
-
-        if wireshark_exists {
+        let wireshark_lib = candidate.join("libwireshark.dylib");
+        let wireshark_so = candidate.join("libwireshark.so");
+        if wireshark_lib.exists() || wireshark_so.exists() {
             return Some(candidate.clone());
         }
     }
 
+    None
+}
+
+#[cfg(target_os = "windows")]
+fn find_wireshark_lib() -> Option<PathBuf> {
+    // On Windows with raw-dylib, we don't need library search paths.
+    // The DLLs are found at runtime via PATH.
     None
 }
 

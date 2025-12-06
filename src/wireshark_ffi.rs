@@ -176,6 +176,12 @@ pub struct module_t {
 /// Preference update callback
 pub type pref_cb = unsafe extern "C" fn();
 
+// On Windows, use raw-dylib to link directly against DLLs without needing import libraries.
+// This eliminates the need to generate .lib files from .dll in CI.
+#[cfg_attr(target_os = "windows", link(name = "wireshark", kind = "raw-dylib"))]
+#[cfg_attr(target_os = "windows", link(name = "wsutil", kind = "raw-dylib"))]
+#[cfg_attr(not(target_os = "windows"), link(name = "wireshark"))]
+#[cfg_attr(not(target_os = "windows"), link(name = "wsutil"))]
 extern "C" {
     // Protocol registration
     pub fn proto_register_protocol(

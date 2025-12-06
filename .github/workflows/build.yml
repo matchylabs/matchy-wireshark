@@ -105,74 +105,28 @@ jobs:
             libglib2.0-dev \
             pkg-config
 
-      - name: Install Wireshark and generate import libraries (Windows)
+      - name: Install Wireshark (Windows)
         if: matrix.platform == 'windows'
         shell: pwsh
         run: |
           # Install Wireshark via Chocolatey
           choco install wireshark -y
           
-          # Find Wireshark installation
+          # Verify installation
           $wsDir = "C:\Program Files\Wireshark"
           if (-not (Test-Path $wsDir)) {
             Write-Error "Wireshark not found at $wsDir"
             exit 1
           }
           
-          # Create lib directory for import libraries
-          $libDir = "$wsDir\lib"
-          New-Item -ItemType Directory -Force -Path $libDir | Out-Null
-          
-          # Generate import libraries from DLLs using lib.exe
-          # This requires Visual Studio build tools to be available
-          $dlls = @("wireshark", "wsutil", "glib-2.0")
-          
-          foreach ($name in $dlls) {
-            $dllPath = Get-ChildItem -Path $wsDir -Filter "$name*.dll" -ErrorAction SilentlyContinue | Select-Object -First 1
-            if ($null -eq $dllPath) {
-              $dllPath = Get-ChildItem -Path $wsDir -Filter "lib$name*.dll" -ErrorAction SilentlyContinue | Select-Object -First 1
-            }
-            
-            if ($null -ne $dllPath) {
-              Write-Host "Generating import library for $($dllPath.Name)"
-              
-              # Generate .def file from DLL exports
-              $defFile = "$libDir\$name.def"
-              $libFile = "$libDir\$name.lib"
-              
-              # Use dumpbin to get exports
-              $exports = & dumpbin /exports $dllPath.FullName | Select-String -Pattern "^\s+\d+\s+[0-9A-F]+\s+[0-9A-F]+\s+(\S+)" -AllMatches
-              
-              # Create .def file
-              "LIBRARY $($dllPath.BaseName)" | Out-File -FilePath $defFile -Encoding ASCII
-              "EXPORTS" | Out-File -FilePath $defFile -Encoding ASCII -Append
-              
-              foreach ($match in $exports.Matches) {
-                $symbol = $match.Groups[1].Value
-                "  $symbol" | Out-File -FilePath $defFile -Encoding ASCII -Append
-              }
-              
-              # Generate .lib from .def
-              & lib /def:$defFile /out:$libFile /machine:x64
-              
-              if (Test-Path $libFile) {
-                Write-Host "Created $libFile"
-              } else {
-                Write-Warning "Failed to create $libFile"
-              }
-            } else {
-              Write-Warning "DLL not found for $name"
-            }
-          }
+          # Add Wireshark to PATH so tshark is available for tests
+          echo "$wsDir" >> $env:GITHUB_PATH
           
           # Set environment variable for build.rs
           echo "WIRESHARK_DIR=$wsDir" >> $env:GITHUB_ENV
           
-          # Show what we have
-          Write-Host "Wireshark DLLs:"
-          Get-ChildItem -Path $wsDir -Filter "*.dll" | Select-Object Name
-          Write-Host "Generated import libraries:"
-          Get-ChildItem -Path $libDir -Filter "*.lib" -ErrorAction SilentlyContinue | Select-Object Name
+          Write-Host "Wireshark installed at $wsDir"
+          Write-Host "tshark available at: $wsDir\tshark.exe"
           
       - name: Run unit tests
         run: |

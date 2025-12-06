@@ -257,11 +257,15 @@ fn find_glib_lib() -> Option<PathBuf> {
     None
 }
 
-/// Generate plugin_version from Cargo.toml version
+/// Generate plugin_version and Wireshark version constants from Cargo.toml
 fn generate_version() {
     let version = env::var("CARGO_PKG_VERSION").unwrap();
     let out_dir = env::var("OUT_DIR").unwrap();
     let dest_path = Path::new(&out_dir).join("version.rs");
+
+    // Read wireshark_min_version from Cargo.toml metadata
+    let (ws_major, ws_minor) = read_wireshark_min_version();
+    eprintln!("Building for minimum Wireshark version: {}.{}", ws_major, ws_minor);
 
     // Generate a null-terminated C string array for the version
     // Format: ['0', '.', '1', '.', '0', '\0']
@@ -280,8 +284,46 @@ fn generate_version() {
 #[no_mangle]
 #[used]
 pub static plugin_version: [libc::c_char; {array_len}] = [{array_contents}];
+
+/// Major version of Wireshark this plugin is built for
+/// Set via [package.metadata] wireshark_min_version in Cargo.toml
+#[no_mangle]
+#[used]
+pub static plugin_want_major: libc::c_int = {ws_major};
+
+/// Minor version of Wireshark this plugin is built for
+#[no_mangle]
+#[used]
+pub static plugin_want_minor: libc::c_int = {ws_minor};
 "#
     );
 
     fs::write(&dest_path, code).unwrap();
+    println!("cargo:rerun-if-changed=Cargo.toml");
+}
+
+/// Read wireshark_min_version from Cargo.toml [package.metadata]
+fn read_wireshark_min_version() -> (i32, i32) {
+    // Read Cargo.toml
+    let cargo_toml = fs::read_to_string("Cargo.toml").expect("Failed to read Cargo.toml");
+    
+    // Simple parsing - look for wireshark_min_version = "X.Y"
+    for line in cargo_toml.lines() {
+        let line = line.trim();
+        if line.starts_with("wireshark_min_version") {
+            if let Some(value) = line.split('=').nth(1) {
+                let value = value.trim().trim_matches('"');
+                let parts: Vec<&str> = value.split('.').collect();
+                if parts.len() >= 2 {
+                    let major = parts[0].parse().unwrap_or(4);
+                    let minor = parts[1].parse().unwrap_or(0);
+                    return (major, minor);
+                }
+            }
+        }
+    }
+    
+    // Default to 4.0 if not found
+    eprintln!("Warning: wireshark_min_version not found in Cargo.toml, defaulting to 4.0");
+    (4, 0)
 }

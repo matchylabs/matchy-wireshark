@@ -59,18 +59,8 @@ static mut ETT_MATCHY: c_int = -1;
 // Plugin Version Information
 // ============================================================================
 
-// Plugin version - auto-generated from Cargo.toml
+// Plugin version and Wireshark compatibility version - auto-generated from Cargo.toml
 include!(concat!(env!("OUT_DIR"), "/version.rs"));
-
-/// Major version of Wireshark this plugin is built for
-#[no_mangle]
-#[used]
-pub static plugin_want_major: c_int = 4;
-
-/// Minor version of Wireshark this plugin is built for
-#[no_mangle]
-#[used]
-pub static plugin_want_minor: c_int = 6;
 
 // ============================================================================
 // Proto Plugin Structure

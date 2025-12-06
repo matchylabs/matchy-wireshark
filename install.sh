@@ -117,7 +117,12 @@ build_plugin() {
 install_plugin() {
     version="$1"
     
-    version_dir=$(echo "$version" | tr '.' '-')
+    # macOS uses dashes (4-6), Linux uses dots (4.6)
+    if [ "$OS_TYPE" = "darwin" ]; then
+        version_dir=$(echo "$version" | tr '.' '-')
+    else
+        version_dir="$version"
+    fi
     plugin_dir="$HOME/.local/lib/wireshark/plugins/${version_dir}/epan"
     plugin_name="matchy.so"
     

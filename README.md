@@ -16,11 +16,8 @@ A Wireshark plugin written in Rust that provides real-time threat intelligence m
 
 ### Requirements
 
-- **Wireshark**: 4.0 or later (macOS, Linux)
+- **Wireshark**: 4.0 or later
 - **Rust**: 1.70 or later (for building from source)
-- **libwireshark**: Development headers (typically included with Wireshark on macOS/Linux)
-
-> **Note:** Windows is not currently supported because Wireshark doesn't ship development libraries (.lib files) with Windows installers. Windows support would require building Wireshark from source.
 
 ### Build from Source
 
@@ -29,16 +26,14 @@ A Wireshark plugin written in Rust that provides real-time threat intelligence m
 cargo build --release
 
 # Output locations:
-# - macOS: target/release/libmatchy_wireshark.dylib
-# - Linux: target/release/libmatchy_wireshark.so
-
-# macOS only: Fix dynamic library paths for portability
-./fix-dylib-paths.sh target/release/libmatchy_wireshark.dylib
+# - macOS: target/release/libmatchy_wireshark_plugin.dylib
+# - Linux: target/release/libmatchy_wireshark_plugin.so
+# - Windows: target/release/matchy_wireshark_plugin.dll
 ```
 
 ### Install
 
-**Option 1: Use the install script** (recommended):
+**Option 1: Use the install script**:
 ```bash
 # After building, run the installer
 ./install.sh
@@ -52,23 +47,36 @@ cargo build --release
 **Option 2: Manual installation**:
 ```bash
 # Detect Wireshark version
-WS_VERSION=$(tshark --version | head -1 | sed -E 's/.*([0-9]+\.[0-9]+)\..*/\1/' | tr '.' '-')
+WS_VERSION=$(tshark --version | head -1 | sed -E 's/.*([0-9]+\.[0-9]+)\..*/\1/')
+
+# macOS uses dashes in version directory (4-6), Linux uses dots (4.6)
+# macOS
+PLUGIN_DIR="$HOME/.local/lib/wireshark/plugins/$(echo $WS_VERSION | tr '.' '-')/epan"
+mkdir -p "$PLUGIN_DIR"
+cp target/release/libmatchy_wireshark_plugin.dylib "$PLUGIN_DIR/matchy.so"
+
+# Linux
 PLUGIN_DIR="$HOME/.local/lib/wireshark/plugins/${WS_VERSION}/epan"
 mkdir -p "$PLUGIN_DIR"
-
-# Copy plugin (macOS)
-cp target/release/libmatchy_wireshark.dylib "$PLUGIN_DIR/matchy.so"
-
-# Copy plugin (Linux)
-cp target/release/libmatchy_wireshark.so "$PLUGIN_DIR/matchy.so"
+cp target/release/libmatchy_wireshark_plugin.so "$PLUGIN_DIR/matchy.so"
 ```
 
-**Option 3: From pre-built release**:
+**Option 3: From pre-built release** (recommended):
+
+Download the appropriate package from [GitHub Releases](https://github.com/matchylabs/matchy-wireshark-plugin/releases):
+- macOS: `matchy-wireshark-plugin-*-macos-arm64.tar.gz`
+- Linux x86_64: `matchy-wireshark-plugin-*-linux-x86_64.tar.gz`
+- Linux ARM64: `matchy-wireshark-plugin-*-linux-aarch64.tar.gz`
+- Windows: `matchy-wireshark-plugin-*-windows-x86_64.zip`
+
 ```bash
-# Download from GitHub releases page
+# macOS/Linux
 tar -xzf matchy-wireshark-plugin-*.tar.gz
 cd matchy-wireshark-plugin-*/
 ./install.sh
+
+# Windows
+# Extract zip and run install.bat
 ```
 
 ## Usage
@@ -186,7 +194,6 @@ The plugin operates as a Wireshark postdissector, processing packets after stand
 - **Display filters**: Custom filter expressions for threat-based packet filtering
 
 ## Development
-
 
 ### Testing and Development
 

@@ -49,73 +49,106 @@ fn get_tshark_version() -> Option<String> {
     None
 }
 
-/// Get the path to the built plugin library
-fn get_built_plugin_path() -> Option<PathBuf> {
-    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-
-    // Check release build first, then debug
-    #[cfg(target_os = "windows")]
-    let candidates = [
-        manifest_dir.join("target/release/matchy_wireshark_plugin.dll"),
-        manifest_dir.join("target/debug/matchy_wireshark_plugin.dll"),
-    ];
-
-    #[cfg(target_os = "macos")]
-    let candidates = [
-        manifest_dir.join("target/release/libmatchy_wireshark_plugin.dylib"),
-        manifest_dir.join("target/debug/libmatchy_wireshark_plugin.dylib"),
-    ];
-
-    #[cfg(target_os = "linux")]
-    let candidates = [
-        manifest_dir.join("target/release/libmatchy_wireshark_plugin.so"),
-        manifest_dir.join("target/debug/libmatchy_wireshark_plugin.so"),
-    ];
-
-    candidates.into_iter().find(|p| p.exists())
-}
-
 /// Set up a temporary plugin directory structure for testing.
+/// Copies all available plugin versions, just like the real install.
 /// Returns the path to the temp plugin dir (set WIRESHARK_PLUGIN_DIR to this).
-fn setup_test_plugin_dir(wireshark_version: &str) -> PathBuf {
-    let plugin_path =
-        get_built_plugin_path().expect("Built plugin not found - run 'cargo build' first");
-
-    // Create temp directory structure: temp/X.Y/epan/
+fn setup_test_plugin_dir() -> PathBuf {
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let temp_dir = std::env::temp_dir().join("matchy-wireshark-test");
-    let plugin_dir = temp_dir.join(wireshark_version).join("epan");
-    std::fs::create_dir_all(&plugin_dir).expect("Failed to create temp plugin directory");
-
-    // Copy plugin to temp dir with correct name
+    
+    // Clean up any previous test directory
+    let _ = std::fs::remove_dir_all(&temp_dir);
+    
     #[cfg(target_os = "windows")]
-    let dest_name = "matchy.dll";
-    #[cfg(not(target_os = "windows"))]
-    let dest_name = "matchy.so";
-
-    let dest_path = plugin_dir.join(dest_name);
-    std::fs::copy(&plugin_path, &dest_path).expect("Failed to copy plugin to temp directory");
-
+    let (plugin_name, dest_name) = ("matchy_wireshark_plugin.dll", "matchy.dll");
+    #[cfg(target_os = "macos")]
+    let (plugin_name, dest_name) = ("libmatchy_wireshark_plugin.dylib", "matchy.so");
+    #[cfg(target_os = "linux")]
+    let (plugin_name, dest_name) = ("libmatchy_wireshark_plugin.so", "matchy.so");
+    
+    let mut installed_count = 0;
+    
+    // First, try to copy from plugins/ directory (CI builds with multiple versions)
+    let plugins_dir = manifest_dir.join("plugins");
+    if plugins_dir.exists() {
+        if let Ok(entries) = std::fs::read_dir(&plugins_dir) {
+            for entry in entries.flatten() {
+                let version_dir = entry.path();
+                if version_dir.is_dir() {
+                    if let Some(version) = version_dir.file_name().and_then(|s| s.to_str()) {
+                        // Look for matchy.so or matchy.dll in the version directory
+                        let src = version_dir.join(dest_name);
+                        if src.exists() {
+                            let dest_dir = temp_dir.join(version).join("epan");
+                            std::fs::create_dir_all(&dest_dir)
+                                .expect("Failed to create temp plugin directory");
+                            let dest = dest_dir.join(dest_name);
+                            std::fs::copy(&src, &dest)
+                                .expect("Failed to copy plugin to temp directory");
+                            eprintln!("Installed plugin for version {} from plugins/", version);
+                            installed_count += 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // If no plugins/ directory (local dev), copy from target/ to common versions
+    if installed_count == 0 {
+        let candidates = [
+            manifest_dir.join("target/release").join(plugin_name),
+            manifest_dir.join("target/debug").join(plugin_name),
+        ];
+        
+        let plugin_path = candidates
+            .into_iter()
+            .find(|p| p.exists())
+            .expect("Built plugin not found - run 'cargo build' first");
+        
+        // Install to common Wireshark versions for local testing
+        for version in ["4.0", "4.2", "4.4", "4.6"] {
+            let dest_dir = temp_dir.join(version).join("epan");
+            std::fs::create_dir_all(&dest_dir)
+                .expect("Failed to create temp plugin directory");
+            let dest = dest_dir.join(dest_name);
+            std::fs::copy(&plugin_path, &dest)
+                .expect("Failed to copy plugin to temp directory");
+        }
+        eprintln!("Installed plugin from target/ to all versions");
+    }
+    
     temp_dir
 }
 
 /// Check if the matchy plugin is loaded by Wireshark (with custom plugin dir)
 fn plugin_loaded_with_dir(plugin_dir: &PathBuf) -> bool {
-    Command::new("tshark")
+    let output = Command::new("tshark")
         .env("WIRESHARK_PLUGIN_DIR", plugin_dir)
         .args(["-G", "plugins"])
-        .output()
-        .map(|o| {
+        .output();
+
+    match output {
+        Ok(o) => {
             let stdout = String::from_utf8_lossy(&o.stdout);
             let stderr = String::from_utf8_lossy(&o.stderr);
             // Check stdout for plugin listing and stderr for load errors
             let found = stdout.to_lowercase().contains("matchy");
             let has_error = stderr.to_lowercase().contains("couldn't load plugin");
             if has_error {
-                eprintln!("Plugin load error: {}", stderr);
+                eprintln!("Plugin load error (stderr): {}", stderr);
+            }
+            if !found {
+                eprintln!("Plugin not found in tshark output. Looking for 'matchy' in:");
+                eprintln!("{}", stdout);
             }
             found && !has_error
-        })
-        .unwrap_or(false)
+        }
+        Err(e) => {
+            eprintln!("Failed to run tshark: {}", e);
+            false
+        }
+    }
 }
 
 /// Run tshark with the matchy plugin and return parsed output
@@ -220,13 +253,13 @@ fn parse_tshark_output(output: &str) -> Result<Vec<PacketResult>, String> {
 
 #[test]
 fn test_plugin_integration() {
-    // Get Wireshark version
+    // Verify tshark is available
     let ws_version =
         get_tshark_version().expect("tshark not found in PATH - install Wireshark/tshark first");
     eprintln!("Detected Wireshark version: {}", ws_version);
 
-    // Set up temp plugin directory with the freshly-built plugin
-    let plugin_dir = setup_test_plugin_dir(&ws_version);
+    // Set up temp plugin directory with all built plugin versions
+    let plugin_dir = setup_test_plugin_dir();
     eprintln!("Using plugin directory: {}", plugin_dir.display());
 
     // Verify plugin loads correctly

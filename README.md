@@ -2,6 +2,8 @@
 
 A Wireshark plugin written in Rust that provides real-time threat intelligence matching during packet capture. Match IPs and domains against threat databases with sub-millisecond performance.
 
+![Wireshark showing threat detection](docs/wireshark-screenshot.png)
+
 ## Features
 
 - **Real-time threat enrichment**: Matches source/destination IPs and domains against threat databases during packet capture

@@ -17,6 +17,11 @@ jobs:
     runs-on: namespace-profile-linux-amd64
     steps:
       - uses: namespacelabs/nscloud-checkout-action@v8
+
+      - name: Set up cache
+        uses: namespacelabs/nscloud-cache-action@v1
+        with: 
+          cache: apt
       
       - name: Install linting tools
         run: |
@@ -169,6 +174,10 @@ jobs:
           Write-Host "Generated import libraries:"
           Get-ChildItem -Path $libDir -Filter "*.lib" -ErrorAction SilentlyContinue | Select-Object Name
           
+      - name: Run unit tests
+        run: |
+          cargo test --lib
+
       - name: Build for all Wireshark versions (Unix)
         if: matrix.platform != 'windows'
         run: |
@@ -201,6 +210,19 @@ jobs:
             PLUGIN="plugins/$WS_VER/matchy.so"
             ./fix-dylib-paths.sh "${PLUGIN}"
           done
+
+      - name: Run integration tests (Unix)
+        if: matrix.platform != 'windows'
+        run: |
+          ./install.sh
+          cargo test --test integration -- --nocapture
+
+      - name: Run integration tests (Windows)
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          .\install.bat
+          cargo test --test integration -- --nocapture
           
       - name: Package (Unix)
         if: matrix.platform != 'windows'

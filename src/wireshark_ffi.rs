@@ -275,61 +275,134 @@ extern "C" {
 }
 
 // ============================================================================
-// packet_info field accessors
+// packet_info struct definition
 //
-// Since packet_info is a large struct with many fields, we access
-// src/dst addresses by calculating offsets. This is fragile but
-// avoids needing the full struct definition.
+// This is a partial definition of Wireshark's packet_info struct.
+// We define the exact layout up to and including the src/dst fields,
+// which is more defensive than using hardcoded byte offsets.
 //
-// Alternative: use Wireshark's exported accessor functions if available.
+// Based on Wireshark 4.6.x epan/packet_info.h
+// If Wireshark changes the struct layout, this will need updating,
+// but at least the compiler will enforce correct field access.
 // ============================================================================
 
-/// Offset to 'src' address in packet_info (Wireshark 4.6)
-/// This is calculated from the packet_info struct definition.
-/// WARNING: This offset may change between Wireshark versions!
-const PINFO_SRC_OFFSET: usize = 208; // Verified for Wireshark 4.6
-const PINFO_DST_OFFSET: usize = 232; // Verified for Wireshark 4.6
+/// Wireshark's nstime_t (from wsutil/nstime.h)
+/// A time value with seconds and nanoseconds
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct nstime_t {
+    pub secs: i64,  // time_t is typically i64
+    pub nsecs: i32,
+}
+
+/// Flags struct embedded in packet_info
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct pinfo_flags {
+    bitfield: u32, // in_error_pkt:1, in_gre_pkt:1
+}
+
+/// Full packet_info struct definition (Wireshark 4.6.x)
+/// This must match the C struct layout exactly!
+#[repr(C)]
+pub struct packet_info_full {
+    pub current_proto: *const c_char,           // const char*
+    pub cinfo: *mut c_void,                     // struct epan_column_info*
+    pub presence_flags: u32,                    // uint32_t
+    pub num: u32,                               // uint32_t (frame number)
+    pub abs_ts: nstime_t,                       // nstime_t
+    pub rel_ts: nstime_t,                       // nstime_t
+    pub rel_cap_ts: nstime_t,                   // nstime_t
+    pub rel_cap_ts_present: bool,               // bool
+    // Padding for alignment (bool is 1 byte, next is pointer)
+    _pad1: [u8; 7],
+    pub fd: *mut c_void,                        // frame_data*
+    pub pseudo_header: *mut c_void,             // union wtap_pseudo_header*
+    pub rec: *mut c_void,                       // wtap_rec*
+    pub data_src: *mut c_void,                  // GSList*
+    pub dl_src: address,                        // address (link-layer source)
+    pub dl_dst: address,                        // address (link-layer dest)
+    pub net_src: address,                       // address (network-layer source)
+    pub net_dst: address,                       // address (network-layer dest)
+    pub src: address,                           // address (source - net if present, DL otherwise)
+    pub dst: address,                           // address (dest - net if present, DL otherwise)
+    // We don't need fields beyond this point
+}
 
 /// Get source address from packet_info
 ///
 /// # Safety
-/// Caller must ensure pinfo is valid
+/// Caller must ensure pinfo is valid and points to a valid packet_info struct
 pub unsafe fn pinfo_get_src(pinfo: *const packet_info) -> *const address {
-    (pinfo as *const u8).add(PINFO_SRC_OFFSET) as *const address
+    if pinfo.is_null() {
+        return std::ptr::null();
+    }
+    // Cast to our full struct definition to access the field properly
+    let pinfo_full = pinfo as *const packet_info_full;
+    &(*pinfo_full).src as *const address
 }
 
 /// Get destination address from packet_info
 ///
 /// # Safety
-/// Caller must ensure pinfo is valid
+/// Caller must ensure pinfo is valid and points to a valid packet_info struct
 pub unsafe fn pinfo_get_dst(pinfo: *const packet_info) -> *const address {
-    (pinfo as *const u8).add(PINFO_DST_OFFSET) as *const address
+    if pinfo.is_null() {
+        return std::ptr::null();
+    }
+    // Cast to our full struct definition to access the field properly
+    let pinfo_full = pinfo as *const packet_info_full;
+    &(*pinfo_full).dst as *const address
 }
 
 /// Extract IPv4 address bytes from Wireshark address struct
-/// Returns None if not an IPv4 address
+/// Returns None if not an IPv4 address or if validation fails
 pub unsafe fn address_to_ipv4(addr: *const address) -> Option<[u8; 4]> {
     if addr.is_null() {
         return None;
     }
     let addr_ref = &*addr;
-    if addr_ref.type_ != AT_IPV4 || addr_ref.len != 4 || addr_ref.data.is_null() {
+    
+    // Defensive checks:
+    // 1. Type must be AT_IPV4 (value 2)
+    // 2. Length must be exactly 4 bytes
+    // 3. Data pointer must be non-null
+    if addr_ref.type_ != AT_IPV4 {
         return None;
     }
+    if addr_ref.len != 4 {
+        return None;
+    }
+    if addr_ref.data.is_null() {
+        return None;
+    }
+    
     let data = addr_ref.data as *const u8;
     Some([*data, *data.add(1), *data.add(2), *data.add(3)])
 }
 
 /// Extract IPv6 address bytes from Wireshark address struct
-/// Returns None if not an IPv6 address
+/// Returns None if not an IPv6 address or if validation fails
 pub unsafe fn address_to_ipv6(addr: *const address) -> Option<[u8; 16]> {
     if addr.is_null() {
         return None;
     }
     let addr_ref = &*addr;
-    if addr_ref.type_ != AT_IPV6 || addr_ref.len != 16 || addr_ref.data.is_null() {
+    
+    // Defensive checks:
+    // 1. Type must be AT_IPV6 (value 3)
+    // 2. Length must be exactly 16 bytes
+    // 3. Data pointer must be non-null
+    if addr_ref.type_ != AT_IPV6 {
         return None;
     }
+    if addr_ref.len != 16 {
+        return None;
+    }
+    if addr_ref.data.is_null() {
+        return None;
+    }
+    
     let data = addr_ref.data as *const [u8; 16];
     Some(*data)
 }
@@ -342,4 +415,59 @@ pub unsafe fn address_to_ipv6(addr: *const address) -> Option<[u8; 16]> {
 /// The returned CString must be kept alive while the pointer is in use.
 pub fn to_c_string(s: &str) -> std::ffi::CString {
     std::ffi::CString::new(s).expect("String contains null byte")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::mem;
+
+    /// Verify our struct layout matches expected Wireshark offsets.
+    /// These offsets were verified against Wireshark 4.6.x.
+    /// If this test fails after a Wireshark update, the struct definition needs updating.
+    #[test]
+    fn test_packet_info_struct_layout() {
+        // Verify address struct size (should be 24 bytes on 64-bit: int + int + ptr + ptr)
+        assert_eq!(
+            mem::size_of::<address>(),
+            24,
+            "address struct size mismatch - Wireshark headers may have changed"
+        );
+
+        // Verify nstime_t size (should be 16 bytes: i64 + i32 + padding)
+        assert_eq!(
+            mem::size_of::<nstime_t>(),
+            16,
+            "nstime_t struct size mismatch"
+        );
+
+        // Calculate offset to src field in our packet_info_full struct
+        let src_offset = mem::offset_of!(packet_info_full, src);
+        let dst_offset = mem::offset_of!(packet_info_full, dst);
+
+        // The original hardcoded offsets were 208 and 232 for Wireshark 4.6
+        // Our struct-based approach should produce the same offsets
+        // If these don't match, our struct definition is wrong
+        assert_eq!(
+            src_offset, 208,
+            "packet_info.src offset mismatch (expected 208, got {}). \
+             The packet_info_full struct layout needs to be updated for this Wireshark version.",
+            src_offset
+        );
+        assert_eq!(
+            dst_offset, 232,
+            "packet_info.dst offset mismatch (expected 232, got {}). \
+             The packet_info_full struct layout needs to be updated for this Wireshark version.",
+            dst_offset
+        );
+    }
+
+    #[test]
+    fn test_address_type_constants() {
+        // Verify our address type constants match Wireshark's enum values
+        assert_eq!(AT_NONE, 0);
+        assert_eq!(AT_ETHER, 1);
+        assert_eq!(AT_IPV4, 2);
+        assert_eq!(AT_IPV6, 3);
+    }
 }

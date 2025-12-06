@@ -135,17 +135,15 @@ fn parse_tshark_output(output: &str) -> Result<Vec<PacketResult>, String> {
 
 #[test]
 fn test_plugin_integration() {
-    // Skip if tshark not available (e.g., in some CI environments)
-    if !tshark_available() {
-        eprintln!("SKIP: tshark not found in PATH");
-        return;
-    }
+    assert!(
+        tshark_available(),
+        "tshark not found in PATH - install Wireshark/tshark first"
+    );
 
-    // Skip if plugin not installed
-    if !plugin_loaded() {
-        eprintln!("SKIP: matchy plugin not loaded (run install.sh first)");
-        return;
-    }
+    assert!(
+        plugin_loaded(),
+        "matchy plugin not loaded - run install.sh/install.bat first"
+    );
 
     let results = run_tshark_test().expect("Failed to run tshark test");
 
